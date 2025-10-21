@@ -1,10 +1,15 @@
-# Extracting NER Skills from LLMs
+# ToMMeR – Efficient Entity Mention Detection from Large Language Models
 
-This repository gather the code for our experiments trying to extract the likely existing NER signals from Encoder only LLMs representations of tokens.
+### Abstract
+> _Identifying which text spans refer to entities --  mention detection -- is both foundational for information extraction and a known performance bottleneck. We introduce ToMMeR, a lightweight model (<300K parameters) probing mention detection capabilities from early LLM layers. Across 13 NER benchmarks, ToMMeR achieves 93\% recall zero-shot, with over 90\% precision using an LLM as a judge showing that ToMMeR rarely produces spurious predictions despite high recall. Cross-model analysis reveals that diverse architectures (14M-15B parameters) converge on similar mention boundaries (DICE >75\%), confirming that mention detection emerges naturally from language modeling.  When extended with span classification heads, ToMMeR achieves near SOTA NER performance (80-87\% F1 on standard benchmarks). Our work provides evidence that structured entity representations exist in early transformer layers and can be efficiently recovered with minimal parameters._
 
-We depend on several key packages:
-- [`experimaestro-python`](https://github.com/experimaestro/experimaestro-python) for experiment management
-- [`transformer-lens`](https://github.com/TransformerLensOrg/TransformerLens) for wrapping LLMs in a generic `HookedTransformer` class with a unified nomencature for placing Hooks. It is build upon the hugginface `transformers` library.
+## Overview
+
+<p align="center">
+    <img src="Assets/AbstractFig.png" alt="ToMMeR Architecture" width="700"/>
+</p>
+
+**Figure 1:**  ToMMeR is a lightweight probing model extracting emergent mention detection capabilities from early layers representations of any LLM backbone, achieving high Zero Shot recall across a wide set of 13 NER benchmarks.
 
 ## Installation
 
@@ -60,4 +65,16 @@ You can run an experiment training a ToMMeR Model on the specified Dataset with 
 
 ```bash
 uv run experimaestro run-experiment experiments/trainTokenMatching
+```
+
+## Acknowledgements
+
+We depend on several key packages:
+- [`experimaestro-python`](https://github.com/experimaestro/experimaestro-python) for experiment management.
+- [`transformer-lens`](https://github.com/TransformerLensOrg/TransformerLens) can be used for wrapping LLMs in a generic `HookedTransformer` class with a unified nomencature for placing Hooks. It is build upon the hugginface `transformers` library.
+
+## Citation
+
+If you find this work useful, please cite the associated publication:
+```
 ```
