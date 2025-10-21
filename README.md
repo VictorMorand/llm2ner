@@ -25,7 +25,7 @@ uv pip install -e git+https://github.com/VictorMorand/llm2ner.git
 #### Using `uv`
 
 We suggest using [uv](https://docs.astral.sh/uv/), a super fast package manager.
-
+The following commands will clone the repo and install it within a new ready-to-use `.venv` with all dependencies.
 ```bash
 git clone https://github.com/VictorMorand/llm2ner.git
 cd llm2ner
@@ -40,7 +40,7 @@ import llm2ner
 from llm2ner import ToMMeR
 
 tommer = ToMMeR.from_pretrained("llm2ner/saved_models/ToMMeR-Llama-3.2-1B_L6_R64")
-# load Backbone llm, optionnally cut it to the releval layer if needed.
+# load Backbone llm, optionnally cut the unused layer to save GPU space.
 llm = llm2ner.utils.load_llm( tommer.llm_name, cut_to_layer=tommer.layer,) 
 tommer.to(llm.device)
 
