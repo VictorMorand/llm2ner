@@ -1,0 +1,64 @@
+id: llm2ner_Class_debug          #id of the experiment
+title: "Classification from NER model (debug)"
+description: "NER model extrinsic Evaluation on downstream classification"
+# add_timestamp: true
+file: xp_learnClassification
+pythonpath: 
+    - .././
+
+# General parameters
+
+launcher: "duration=15h & cuda(mem=10G)*1 & cpu(cores=4)"
+
+
+###############  Dataset ###############
+
+data_folder: "/lustre/fswork/projects/rech/cdt/uqo57sk/data/NER" # on JZ
+# data_folder: "/data/morand/NER" # on hacienda
+max_length: 1500    # max TOKEN length of the input sequence
+max_ent_length: 400 # max CHAR length of the entity
+
+
+############### models to use ###############
+learner_hashs:
+    - "f98894120a78abc5b33b03afd9770752e6aea28d9a696fdd0896944de1ec4135" # Llama-3.2-3B 
+    - "d1a37c425eac6d94f7022764b390c7a70d1ee3fd492ea0615d4c0d4766b2460c" # Llama-3.2-1B 
+
+extract_layer : 10
+
+n_layers: 
+ - 2
+
+embed_dim: 
+ - 1024
+
+
+############### Training ###############
+
+epochs: 5                   # number of epochs
+batch_size: 16               # batch size
+lr: 1e-3                    # learning rate 
+patience: 1000               # patience for lr scheduler
+early_stopping: true
+min_lr: 1e-5
+n_val: 3000                 # number of samples between validation and logging
+accumulation_steps: 1       # 1 for no accumulation
+grad_clip: 1.0              # 0 for no clipping
+
+
+## Only small datasets for debug
+sup_datasets:
+    - "CoNLL 2003"
+    - "ncbi"
+    - "GENIA_NER"
+    - "MultiNERD" 
+    # - "CrossNER_politics" #too few samples for brute supervised
+    # - "CrossNER_AI"
+    # - "CrossNER_literature"
+    # - "CrossNER_science"
+    # - "CrossNER_music"
+    # - "WikiNeural"
+
+flat_decoder_strategies:
+    - "threshold"
+    - "greedy"

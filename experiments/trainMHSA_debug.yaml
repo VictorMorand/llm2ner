@@ -1,0 +1,82 @@
+id: llm2ner_MHSA_debug          #id of the experiment
+title: "Training"
+description: "Training a custom low rank self attention layer to extract NER skills from LLMs"
+add_timestamp: false
+file: xp_learnMHSA
+pythonpath: 
+    - .././
+
+# General parameters
+# model_name: "gpt2-medium" # 24 (0-23) Transformer layers 
+# model_name: "meta-llama/Llama-3.2-1B"  # 16 layers 1.1B
+# model_name: "phi-2" # 32 (0-31) Transformer layers | ok 32G with batch 32
+# model_name: "phi-1_5" # 24 (0-23) Transformer layers | 
+# model_name: "EleutherAI/pythia-410m" # 28 layers 3.2 B | OK 16Gb Pile-NER
+# model_name: "mistral-7b"  # 7B
+# model_name: "meta-llama/Llama-3.1-8B" # 28 layers 3.2 B
+model_name: "meta-llama/Llama-3.2-1B"  # 16 layers 1.1B | OK 32Gb Pile-NER (19Bg max batch size 8)
+
+
+launcher: "duration=15h & cuda(mem=30G)*1 & cpu(cores=8)" # 4cores per 24Gb GPU on Hacienda..
+
+
+###############  Dataset ###############
+
+dataset_name: "Pile-NER" # need to define the data folder
+# dataset_name: "CoNLL2003"
+data_folder: "/lustre/fswork/projects/rech/cdt/uqo57sk/data/NER" # on JZ
+# data_folder: "/data/morand/NER" # on hacienda
+max_length: 1500    # max TOKEN length of the input sequence
+max_ent_length: 400 # max CHAR length of the entity
+
+############### Training ###############
+
+epochs: 5                   # number of epochs
+batch_size: 16               # batch size
+lr: 5e-3                    # learning rate 
+patience: 5000               # patience for lr scheduler
+n_val: 1000                 # number of samples between validation and logging
+accumulation_steps: 1       # 1 for no accumulation
+grad_clip: 1              # 0 for no clipping
+val_metric: "f1"            # metric to use for validation
+
+self_distillation_phases: 1
+reset_student_weights: true
+sparse_distill_loss: true
+teacher_thr_prob: 0.90
+
+############### Model ###############
+
+sliding_window: 25
+mask_bos : true
+use_cosine: true
+
+# grid search params
+ranks: 
+ - 64
+
+n_heads:
+ - 1
+
+layers:                     # will extract Q and K from layer [range( l-n: l ) for l in range( from : to )]
+    from: 5               
+    to: 5
+    n: 1
+
+
+############### Evaluation ###############
+
+## Flat datasets
+flat_eval_datasets:
+    - "MultiNERD" 
+    - "CoNLL 2003"
+    - "CrossNER_politics"
+    - "CrossNER_AI"
+    - "CrossNER_literature"
+    - "CrossNER_science"
+    - "CrossNER_music"
+    - "FabNER"
+    - "ncbi"
+    - "WikiNeural"
+
+eval_threshold: 0.90

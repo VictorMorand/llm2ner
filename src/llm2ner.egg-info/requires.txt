@@ -1,0 +1,15 @@
+anywidget>=0.9.18
+circuitsvis>=1.43.3
+einops>=0.8.1
+experimaestro
+ipywidgets>=8.1.6
+matplotlib>=3.10.1
+notebook>=7.4.1
+openpyxl>=3.1.5
+plotly>=6.0.1
+rotary-embedding-torch>=0.8.6
+scikit-learn>=1.6.1
+spacy>=3.8.7
+torch<2.8,>=2.1
+transformer-lens>=2.15.0
+transformers<4.54.0

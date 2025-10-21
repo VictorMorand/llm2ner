@@ -1,0 +1,111 @@
+id: llm2ner_TM          #id of the experiment
+title: "Training"
+description: "Training a custom low rank self attention layer to extract NER skills from LLMs"
+# add_timestamp: true
+file: xp_learnTokenMatching
+pythonpath: 
+    - .././
+
+# General parameters
+
+# -  "gpt2-medium" # 24 (0-23) Transformer layers 
+# -  "meta-llama/Llama-3.2-1B"  # 16 layers 1.1B
+# -  "mistral-7b"  # 7B
+# -  "phi-2" # 32 (0-31) Transformer layers | ok 32G with batch 32
+# -  "phi-1_5" # 24 (0-23) Transformer layers | 
+# -  "meta-llama/Llama-3.2-3B" # 28 layers 3.2 B
+# -  "EleutherAI/pythia-410m" # 28 layers 3.2 B
+# -  "answerdotai/ModernBERT-base"  # 16 layers 1.1B
+
+model_names: 
+ - "meta-llama/Llama-3.2-1B"  # 16 layers 1.1B
+#  - "meta-llama/Llama-3.2-3B" # 28 layers 3.2 B
+
+
+launcher: "duration=15h & cuda(mem=15G)*1 & cpu(cores=8)" # 4cores per 24Gb GPU on Hacienda..
+
+###############  Dataset ###############
+
+# dataset_name: "MultiNERD" # need to define the data folder
+dataset_name: "Pile-NER" # need to define the data folder
+# dataset_name: "CoNLL2003"
+data_folder: "/lustre/fswork/projects/rech/cdt/uqo57sk/data/NER" # on JZ
+# data_folder: "/data/morand/NER" # on hacienda
+max_length: 1500    # max TOKEN length of the input sequence
+max_ent_length: 400 # max CHAR length of the entity
+
+############### Training ###############
+
+epochs: 9                   # number of epochs
+batch_size: 8               # batch size
+lr: 1e-2                    # learning rate 
+patience: 5000               # patience for lr scheduler
+n_val: 3000                 # number of samples between validation and logging
+accumulation_steps: 4       # 1 for no accumulation
+grad_clip: 0.0              # 0 for no clipping
+val_metric: "f1"            # metric to use for validation
+
+self_distillation_phases: 1
+reset_student_weights: true
+sparse_distill_loss: true
+teacher_thr_prob: 0.90
+
+############### Model ###############
+
+ranks: 
+    - 128
+    - 64
+    - 32
+    # - 16
+
+layers:                     # will extract Q and K from layer [range( l-n: l ) for l in range( from : to )]
+    from: 5
+    to: 5
+
+sliding_window: 25
+use_cosine: true
+normalize_scores: ""    # atan , log_sigmoid
+
+methods:                    # Aggregation methods, see models.METHODS
+    - "cl_fn_minmaxpool"   
+
+dilate_entities:         # train only on entities, 
+    - null               
+
+
+############### Evaluation ###############
+
+## Flat datasets
+flat_eval_datasets:
+    - "MultiNERD" 
+    - "CoNLL 2003"
+    - "CrossNER_politics"
+    - "CrossNER_AI"
+    - "CrossNER_literature"
+    - "CrossNER_science"
+    - "CrossNER_music"
+    - "FabNER"
+    - "ncbi"
+    - "WikiNeural"
+
+flat_decoder_strategies:
+    - "greedy"
+    - "threshold"
+
+nested_eval_datasets: 
+    - "ACE 2005"
+    - "GENIA_NER"
+
+llm_annotated_datasets: 
+    - "MultiNERD_gpt-4_1_n1000"
+    - "GENIA_NER_gpt-4_1_n1000"
+
+eval_threshold: 0.99
+
+############### LLM Annotation ###############
+annot_names:
+ - "gemma3:8b"
+# annot_datasets:
+# #  - "MultiNERD"
+limit_samples: 1000
+annot_launcher: "duration=19h & cuda(mem=10G)*1 & cpu(cores=4)"

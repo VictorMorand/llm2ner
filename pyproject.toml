@@ -1,0 +1,42 @@
+[project]
+name = "llm2ner"
+version = "0.1.0"
+description = "Codebase for using and training ToMMer models : Token Matching Entity Recognition"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "anywidget>=0.9.18",
+    "circuitsvis>=1.43.3",
+    "einops>=0.8.1",
+    "experimaestro",
+    "ipywidgets>=8.1.6",
+    "matplotlib>=3.10.1",
+    "notebook>=7.4.1",
+    "openpyxl>=3.1.5",
+    "plotly>=6.0.1",
+    "rotary-embedding-torch>=0.8.6",
+    "scikit-learn>=1.6.1",
+    "spacy>=3.8.7",
+    "torch>=2.1,<2.8",
+    "transformer-lens>=2.15.0",
+    "transformers<4.54.0",
+]
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+llm2ner = { workspace = true }
+experimaestro = { git = "https://github.com/experimaestro/experimaestro-python", tag = "2.0.0a1" }
+
+[tool.uv.workspace]
+members = [
+    ".",
+]
+
+[dependency-groups]
+dev = [
+    "llm2ner",
+    "openai>=2.6.0",
+    "tensorboard>=2.20.0",
+]

@@ -1,0 +1,73 @@
+id: llm2ner_Class       #id of the experiment
+title: "Classification from NER model (debug)"
+description: "NER model extrinsic Evaluation on downstream classification"
+# add_timestamp: true
+file: xp_learnClassification
+pythonpath: 
+    - .././
+
+# General parameters
+
+launcher: "duration=15h & cuda(mem=40G)*1 & cpu(cores=8)"
+
+
+###############  Dataset ###############
+
+data_folder: "/lustre/fswork/projects/rech/cdt/uqo57sk/data/NER" # on JZ
+# data_folder: "/data/morand/NER" # on hacienda
+max_length: 1500    # max TOKEN length of the input sequence
+max_ent_length: 400 # max CHAR length of the entity
+
+############### models to use ###############
+
+learner_hashs:
+    - "54902965e7d3cb257688663a1ae9c4b78bfc6dae774f32c464129c1b0b69817c" # Llama-3.2-1B 
+    - "92bf3cebce4887dabb0d77f09f6d2a79c47f6e40f0e7cc36c9af5e50fcc14bc1" # Llama-3.2-1B -> better ? NO
+    - "58c78a0900901308dfc1cb0ede4d4b899ffa99921dab9f3deda84a4337e26b7f" # Llama-3.2-3B, better ? -> YES 
+    - "eb2074febd9518c9b8f17db4bafacb68c1c0dcdb71d514bc0f5bcc92d5bbe14d" # Llama-3.2-8B,
+    - "bd164efaa3fd4f79f4cee058494fcd12ff2fcba64554678562c23f906701e03c" # Bert layer 3
+    - "635d532625f63eb76d73b434a566ce17d14c2e37dbf771c2817d44e94e596e60" # Roberta layer 5
+    - "cfb721dcd341deb58abf63c1452c366d9cfe9566ffc02764318d9c496a4cc659" # Pythia layer 5 -> Compare with EMBER
+
+extract_layer : 11 #(last Bert layer)
+
+n_layers: 
+ - 2
+
+embed_dim: 
+ - 1024
+
+
+############### Training ###############
+
+epochs: 15                  # number of epochs
+batch_size: 16               # batch size
+lr: 1e-3                    # learning rate 
+patience: 1000               # patience for lr scheduler
+early_stopping: true
+min_lr: 1e-5
+n_val: 3000                 # number of samples between validation and logging
+accumulation_steps: 2       # 1 for no accumulation
+grad_clip: 0.5              # 0 for no clipping
+
+zero_shot_data: "Pile-NER"
+
+## Only small datasets for debug
+sup_datasets:
+    - "CoNLL 2003"
+    - "ncbi"
+    - "GENIA_NER"
+    - "MultiNERD"
+    - "Ontonotes"
+    # - "CrossNER_politics" #too few samples for brute supervised
+    # - "CrossNER_AI"
+    # - "CrossNER_literature"
+    # - "CrossNER_science"
+    # - "CrossNER_music"
+    # - "WikiNeural"
+
+flat_decoder_strategies:
+    - "threshold"
+
+eval_thresholds:
+    - 0.5

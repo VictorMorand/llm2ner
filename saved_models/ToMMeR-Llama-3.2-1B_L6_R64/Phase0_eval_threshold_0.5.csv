@@ -1,0 +1,2 @@
+	precision	recall	f1	true_pos	false_pos	total	total_spans
+CrossNER_science	0.16841580521588698	0.9693446088780288	0.2869724581356974	6419	31695	6622	1096990

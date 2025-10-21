@@ -1,0 +1,17 @@
+/env
+.DS_Store
+.vscode/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+plots/
+checkpoints/
+datasets/
+annot_data/
+plots/
+runs/
+ckpts/
+data/

@@ -1,0 +1,113 @@
+id: llm2ner_TM_Models        #id of the experiment
+title: "Training"
+description: "Training a custom low rank self attention layer to extract NER skills from LLMs"
+# add_timestamp: true
+file: xp_learnTokenMatching
+pythonpath: 
+    - .././
+
+# General parameters
+
+
+
+###############  Dataset ###############
+
+# dataset_name: "MultiNERD" # need to define the data folder
+dataset_name: "Pile-NER" # need to define the data folder
+# dataset_name: "CoNLL2003"
+data_folder: "/lustre/fswork/projects/rech/cdt/uqo57sk/data/NER" # on JZ
+# data_folder: "/data/morand/NER" # on hacienda
+max_length: 1500    # max TOKEN length of the input sequence
+max_ent_length: 400 # max CHAR length of the entity
+
+
+model_names: 
+ - "meta-llama/Llama-3.2-1B"  # 16 layers 1.1B
+ - "meta-llama/Llama-3.2-3B" # 28 layers 3.2 B
+ - "meta-llama/Llama-3.1-8B" # 28 layers 3.2 B
+ - "EleutherAI/pythia-14m" # 28 layers 3.2 B
+ - "EleutherAI/pythia-31m" # 28 layers 3.2 B
+ - "EleutherAI/pythia-70m" # 28 layers 3.2 B
+ - "EleutherAI/pythia-160m" # 28 layers 3.2 B
+ - "EleutherAI/pythia-410m" # 28 layers 3.2 B
+ - "EleutherAI/pythia-1b" # 28 layers 3.2 B
+ - "EleutherAI/pythia-1.4b" # 28 layers 3.2 B
+ - "EleutherAI/pythia-2.8b" # 28 layers 3.2 B
+ - "EleutherAI/pythia-6.9b" # 28 layers 3.2 B -> too big for now
+ - "EleutherAI/pythia-12b" # 28 layers 3.2 B
+ - "answerdotai/ModernBERT-base" # 28 layers 3.2 B
+ - "phi-1_5" # 24 (0-23) Transformer layers | 
+ - "phi-2" # 32 (0-31) Transformer layers | ok 32G with batch 32
+ - "phi-4" # 32 (0-31) Transformer layers | ok 32G with batch 32
+ - "mistral-7b"  # 7B
+ - "bert-base-uncased"  # 12 layers 125M 
+ - "FacebookAI/roberta-base"  # 12 layers 125M 
+#  - "phi-3" # 32 (0-31) NOK with AutoModel, could try with HookedModel
+ 
+# -  "gpt2-medium" # 24 (0-23) Transformer layers 
+# -  "gpt2-xl" # 24 (0-23) Transformer layers 
+
+
+launcher: "duration=20h & cuda(mem=42G)*1 & cpu(cores=8)" # 4cores per 24Gb GPU on Hacienda..
+eval_launcher: "duration=10h & cuda(mem=40G)*1 & cpu(cores=4)"
+
+
+############### Training ###############
+
+epochs: 8                   # number of epochs
+batch_size: 16               # batch size
+lr: 1e-2                    # learning rate 
+patience: 5000               # patience for lr scheduler
+n_val: 3000                 # number of samples between validation and logging
+accumulation_steps: 1       # 1 for no accumulation
+grad_clip: 1.0              # 0 for no clipping
+val_metric: "f1"            # metric to use for validation
+
+self_distillation_phases: 1
+reset_student_weights: true
+sparse_distill_loss: true
+teacher_thr_prob: 0.90
+
+############### Model ###############
+
+ranks: 
+    - 64
+
+layers:                     # will reps from layers in range( from, to+1, n) 
+    from: 1
+    to: 5
+    n: 2                   
+
+sliding_window: 25
+use_cosine: true
+methods:                    # Aggregation methods, see models.METHODS
+    - "cl_fn_minmaxpool"   
+
+############### Evaluation ###############
+
+flat_eval_datasets:
+    - "MultiNERD" 
+    - "CoNLL 2003"
+    - "CrossNER_politics"
+    - "CrossNER_AI"
+    - "CrossNER_literature"
+    - "CrossNER_science"
+    - "CrossNER_music"
+    - "ncbi"
+    - "FabNER"
+    - "WikiNeural"
+    - "GENIA_NER"
+    - "ACE 2005"
+    - "Ontonotes"
+
+flat_decoder_strategies:
+    - "threshold"
+
+nested_eval_datasets: #we store inferences for these datasets only 
+    - "GENIA_NER"
+
+llm_annotated_datasets:
+    - "ToM_GENIA_test_judged_gpt-4.1-mini_with_GT_10000"     
+    - "ToM_MultiNERD_test_judged_gpt-4.1-mini_with_GT_10000"     
+
+eval_threshold: 0.50

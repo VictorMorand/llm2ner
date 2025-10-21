@@ -1,0 +1,85 @@
+id: llm2ner_CLAttn_debug       #id of the experiment
+title: "Training"
+description: "Training a custom low rank self attention layer to extract NER skills from LLMs"
+# add_timestamp: true
+file: xp_learnCLAttn
+pythonpath: 
+    - .././
+
+
+# General parameters
+
+###############  Dataset ###############
+
+dataset_name: "Pile-NER" # need to define the data folder
+# data_folder: "/lustre/fswork/projects/rech/cdt/uqo57sk/data/NER" # on JZ
+data_folder: "/data/morand/NER" # on hacienda
+max_length: 1000    # max TOKEN length of the input sequence
+max_ent_length: 400 # max CHAR length of the entity
+
+
+############### Model ###############
+
+model_names: 
+ - "meta-llama/Llama-3.2-1B"  # 16 layers 1.1B
+
+sliding_window: 25
+layers:                     # will extract Q and K from layer [range( l-n: l ) for l in range( from : to )]
+    from: 3
+    to: 3
+    n: -1                   # number of consecutive layers to attn scores, -1 means all 
+
+methods:                    # Normalization methods for LCAttn,
+    - "logits"   
+    # - "softmax"   
+    # - "logsigmoid"   
+    # - "sigmoid"   
+
+############### Training ###############
+
+launcher: "duration=20h & cuda(mem=16G)*1 & cpu(cores=8)" # 4cores per 24Gb GPU on Hacienda..
+eval_launcher: "duration=10h & cuda(mem=16G)*1 & cpu(cores=4)"
+
+
+epochs: 2                   # number of epochs
+batch_size: 8               # batch size
+lr: 1e-2                    # learning rate 
+patience: 3000               # patience for lr scheduler
+n_val: 3000                 # number of samples between validation and logging
+accumulation_steps: 2       # 1 for no accumulation
+grad_clip: 2.0              # 0 for no clipping
+val_metric: "f1"            # metric to use for validation
+
+self_distillation_phases: 1
+reset_student_weights: true
+sparse_distill_loss: true
+teacher_thr_prob: 0.90
+
+
+############### Evaluation ###############
+
+## Flat datasets
+flat_eval_datasets:
+    - "MultiNERD" 
+    - "CoNLL 2003"
+    - "CrossNER_politics"
+    - "CrossNER_AI"
+    - "CrossNER_literature"
+    - "CrossNER_science"
+    - "CrossNER_music"
+    - "ncbi"
+    - "FabNER"
+    - "WikiNeural"
+    - "GENIA_NER"
+    - "ACE 2005"
+    - "Ontonotes"
+
+flat_decoder_strategies:
+    - "threshold"
+
+llm_annotated_datasets:
+    - "ToM_GENIA_test_judged_gpt-4.1-mini_with_GT_10000"     
+    - "ToM_MultiNERD_test_judged_gpt-4.1-mini_with_GT_10000"     
+
+
+eval_threshold: 0.50

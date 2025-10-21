@@ -1,0 +1,5 @@
+	dataset	precision	recall	f1	true_pos	false_pos	total	total_spans	n_samples	predicted_fraction
+0	ToM_GENIA_test_judged_gpt-4.1-mini_with_GT_10000	0.9231	0.6843	0.786	5955.0	496.0	8702.0	333240.0	512	0.0261
+1	ToM_MultiNERD_test_judged_gpt-4.1-mini_with_GT_10000	0.9278	0.7113	0.8053	6345.0	494.0	8920.0	355350.0	1064	0.0251
+2	Aggregated	0.9263	0.7026	0.799	12300.0	990.0	17622.0	688590.0	1576	0.0256
+3	Mean	0.9254	0.6978	0.7956	6150.0	495.0	8811.0	344295.0	1576	0.0256
