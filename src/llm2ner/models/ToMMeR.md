@@ -37,10 +37,7 @@ pip install git+{{repo_url}}.git
 Quick inference:
 ```python
 from llm2ner import NERmodel
-model = NERmodel.from_pretrained("{{library_name}}/{{model_id}}")
-text = "John lives in New York City."
-spans = model.predict_spans([text], threshold=0.5)  # implement threshold logic externally if needed
-print(spans)
+
 ```
 
 ## Model Details

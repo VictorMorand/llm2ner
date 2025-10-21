@@ -1,3 +1,4 @@
+LICENSE
 README.md
 pyproject.toml
 src/llm2ner/__init__.py
