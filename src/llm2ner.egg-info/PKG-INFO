@@ -2,7 +2,7 @@ Metadata-Version: 2.4
 Name: llm2ner
 Version: 0.1.0
 Summary: Codebase for using and training ToMMer models : Token Matching Entity Recognition
-Requires-Python: >=3.10
+Requires-Python: !=3.11,>=3.10
 Description-Content-Type: text/markdown
 License-File: LICENSE
 Requires-Dist: anywidget>=0.9.18
@@ -22,57 +22,83 @@ Requires-Dist: transformer-lens>=2.15.0
 Requires-Dist: transformers<4.54.0
 Dynamic: license-file
 
-# Extracting NER Skills from LLMs
+# ToMMeR – Efficient Entity Mention Detection from Large Language Models
 
-This repository gather the code for our experiments trying to extract the likely existing NER signals from Encoder only LLMs representations of tokens.
+### Abstract
+> _Identifying which text spans refer to entities --  mention detection -- is both foundational for information extraction and a known performance bottleneck. We introduce ToMMeR, a lightweight model (<300K parameters) probing mention detection capabilities from early LLM layers. Across 13 NER benchmarks, ToMMeR achieves 93\% recall zero-shot, with over 90\% precision using an LLM as a judge showing that ToMMeR rarely produces spurious predictions despite high recall. Cross-model analysis reveals that diverse architectures (14M-15B parameters) converge on similar mention boundaries (DICE >75\%), confirming that mention detection emerges naturally from language modeling.  When extended with span classification heads, ToMMeR achieves near SOTA NER performance (80-87\% F1 on standard benchmarks). Our work provides evidence that structured entity representations exist in early transformer layers and can be efficiently recovered with minimal parameters._
 
-We depend on several key packages:
-- [`experimaestro-python`](https://github.com/experimaestro/experimaestro-python) for experiment management
-- [`transformer-lens`](https://github.com/TransformerLensOrg/TransformerLens) for wrapping LLMs in a generic `HookedTransformer` class with a unified nomencature for placing Hooks. It is build upon the hugginface `transformers` library.
+## Overview
 
-### Installation
+<p align="center">
+    <img src="Assets/AbstractFig.png" alt="ToMMeR Architecture" width="700"/>
+</p>
 
-### Using [uv](https://docs.astral.sh/uv/)
+**Figure 1:**  ToMMeR is a lightweight probing model extracting emergent mention detection capabilities from early layers representations of any LLM backbone, achieving high Zero Shot recall across a wide set of 13 NER benchmarks.
 
-This project has been developped with uv, you can manually init a new virtual env with :
-#### Dev 
-```bash
-git clone ... 
-uv sync # creates a venv with add required dependencies
-uv pip install -e .
-```
-
-#### Within you env
-```bash
-uv pip install -e git+https ... 
-```
+## Installation
 
 ### Using Pip
 
-Optionnally create a special env for
 ```bash
-python -m venv env 
-source env/bin/activate
-pip install --upgrade pip
-```
-and then install the requirements
-
-```bash
-pip install -r requirements.txt
+uv pip install -e git+https://github.com/VictorMorand/llm2ner.git
 ```
 
 
-## Running Experiments
+### Local install for Dev 
+
+#### Using `uv`
+
+We suggest using [uv](https://docs.astral.sh/uv/), a super fast package manager.
+The following commands will clone the repo and install it within a new ready-to-use `.venv` with all dependencies.
+```bash
+git clone https://github.com/VictorMorand/llm2ner.git
+cd llm2ner
+uv sync
+```
+
+## Usage
+
+###
+```python
+import llm2ner
+from llm2ner import ToMMeR
+
+tommer = ToMMeR.from_pretrained("llm2ner/saved_models/ToMMeR-Llama-3.2-1B_L6_R64")
+# load Backbone llm, optionnally cut the unused layer to save GPU space.
+llm = llm2ner.utils.load_llm( tommer.llm_name, cut_to_layer=tommer.layer,) 
+tommer.to(llm.device)
+
+text = "Large language models are awesome. While trained on language modeling, they exhibit emergent Zero Shot abilities that make them suitable for a wide range of tasks, including Named Entity Recognition (NER). "
+
+#fancy interactive output
+outputs = llm2ner.plotting.demo_inference( text, tommer, llm,
+    decoding_strategy="threshold",  # or "greedy" for flat segmentation
+    threshold=0.5, # default 50%
+    show_attn=True,
+)
+```
 
 ### Demo 
-The [`Demo.ipynb`](./Notebooks/Demo.ipynb) notebook enables you to quickly test the models.
+The [`ToMMeR_Demo.ipynb`](./Notebooks/ToMMeR_Demo.ipynb) notebook enables you to quickly test the models.
 
 
-#### Running experiments
+### Running experiments
 
-[Experimaestro](https://github.com/experimaestro/experimaestro-python) is used to run launch and run experiments.
-You can run an experiment training an Attn Model on a specified Dataset with the following command:
+[Experimaestro](https://github.com/experimaestro/experimaestro-python) is used to launch and monitor experiments.
+You can run an experiment training a ToMMeR Model on the specified Dataset with the following command:
 
 ```bash
 uv run experimaestro run-experiment experiments/trainTokenMatching
+```
+
+## Acknowledgements
+
+We depend on several key packages:
+- [`experimaestro-python`](https://github.com/experimaestro/experimaestro-python) for experiment management.
+- [`transformer-lens`](https://github.com/TransformerLensOrg/TransformerLens) can be used for wrapping LLMs in a generic `HookedTransformer` class with a unified nomencature for placing Hooks. It is build upon the hugginface `transformers` library.
+
+## Citation
+
+If you find this work useful, please cite the associated publication:
+```
 ```

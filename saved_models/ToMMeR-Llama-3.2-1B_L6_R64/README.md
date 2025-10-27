@@ -37,10 +37,7 @@ pip install git+https://github.com/VictorMorand/llm2ner.git
 Quick inference:
 ```python
 from llm2ner import NERmodel
-model = NERmodel.from_pretrained("VictorMorand/ToMMeR/ToMMeR-Llama-3.2-1B_L6_R64")
-text = "John lives in New York City."
-spans = model.predict_spans([text], threshold=0.5)  # implement threshold logic externally if needed
-print(spans)
+
 ```
 
 ## Model Details

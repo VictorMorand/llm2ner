@@ -1,15 +1,37 @@
-# ToMMeR – Efficient Entity Mention Detection from Large Language Models
+<div align="center">
 
-### Abstract
-> _Identifying which text spans refer to entities --  mention detection -- is both foundational for information extraction and a known performance bottleneck. We introduce ToMMeR, a lightweight model (<300K parameters) probing mention detection capabilities from early LLM layers. Across 13 NER benchmarks, ToMMeR achieves 93\% recall zero-shot, with over 90\% precision using an LLM as a judge showing that ToMMeR rarely produces spurious predictions despite high recall. Cross-model analysis reveals that diverse architectures (14M-15B parameters) converge on similar mention boundaries (DICE >75\%), confirming that mention detection emerges naturally from language modeling.  When extended with span classification heads, ToMMeR achieves near SOTA NER performance (80-87\% F1 on standard benchmarks). Our work provides evidence that structured entity representations exist in early transformer layers and can be efficiently recovered with minimal parameters._
+[![arXiv](https://img.shields.io/badge/arXiv-2408.08656-b31b1b.svg)](https://arxiv.org/abs/2510.19410)
+[![Repository version](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FVictorMorand%2Fllm2ner%2Fmain%2Fpyproject.toml&query=project.version&label=version&color=blue)](https://github.com/VictorMorand/llm2ner)
 
-## Overview
+<h1>ToMMeR – Efficient Entity Mention Detection from Large Language Models</h1>
+<div>
+    <a href='https://victormorand.github.io/' target='_blank'>Victor Morand</a><sup>1</sup>&emsp;
+    <a target='_blank'>Nadi Tomeh</a><sup>1</sup>&emsp;
+    <a href='https://scholar.google.com/citations?user=V-Nyr0wAAAAJ' target='_blank'>Josiane Mothe</a><sup>3</sup>&emsp;
+    <a href='https://www.piwowarski.fr' target='_blank'>Benjamin Piwowarski</a><sup>1</sup>&emsp;
+</div>
+<br>
+<div>
+    <sup>1</sup>Sorbonne Université, CNRS, ISIR, F-75005 Paris, France&emsp;<br>
+    <sup>2</sup>LIPN, Université Sorbonne Paris Nord, UMR7030 CNRS&emsp;<br>
+    <sup>3</sup>IRIT, Université de Toulouse, UMR5505 CNRS, F-31400 Toulouse, France&emsp;<br>
+</div>
+<br>
+
+
+<br>
+
+</div>
 
 <p align="center">
-    <img src="Assets/AbstractFig.png" alt="ToMMeR Architecture" width="700"/>
+    <img src="Assets/AbstractFig.png" alt="ToMMeR Architecture" width="600"/>
 </p>
 
 **Figure 1:**  ToMMeR is a lightweight probing model extracting emergent mention detection capabilities from early layers representations of any LLM backbone, achieving high Zero Shot recall across a wide set of 13 NER benchmarks.
+
+
+### Abstract
+> _Identifying which text spans refer to entities -  mention detection - is both foundational for information extraction and a known performance bottleneck. We introduce ToMMeR, a lightweight model (<300K parameters) probing mention detection capabilities from early LLM layers. Across 13 NER benchmarks, ToMMeR achieves 93\% recall zero-shot, with over 90\% precision using an LLM as a judge showing that ToMMeR rarely produces spurious predictions despite high recall. Cross-model analysis reveals that diverse architectures (14M-15B parameters) converge on similar mention boundaries (DICE >75\%), confirming that mention detection emerges naturally from language modeling.  When extended with span classification heads, ToMMeR achieves near SOTA NER performance (80-87\% F1 on standard benchmarks). Our work provides evidence that structured entity representations exist in early transformer layers and can be efficiently recovered with minimal parameters._
 
 ## Installation
 
@@ -34,29 +56,9 @@ uv sync
 
 ## Usage
 
-###
-```python
-import llm2ner
-from llm2ner import ToMMeR
 
-tommer = ToMMeR.from_pretrained("llm2ner/saved_models/ToMMeR-Llama-3.2-1B_L6_R64")
-# load Backbone llm, optionnally cut the unused layer to save GPU space.
-llm = llm2ner.utils.load_llm( tommer.llm_name, cut_to_layer=tommer.layer,) 
-tommer.to(llm.device)
-
-text = "Large language models are awesome. While trained on language modeling, they exhibit emergent Zero Shot abilities that make them suitable for a wide range of tasks, including Named Entity Recognition (NER). "
-
-#fancy interactive output
-outputs = llm2ner.plotting.demo_inference( text, tommer, llm,
-    decoding_strategy="threshold",  # or "greedy" for flat segmentation
-    threshold=0.5, # default 50%
-    show_attn=True,
-)
-```
-
-### Demo 
-The [`ToMMeR_Demo.ipynb`](./Notebooks/ToMMeR_Demo.ipynb) notebook enables you to quickly test the models.
-
+Please see [`ToMMeR_Demo.ipynb`](./Notebooks/ToMMeR_Demo.ipynb) notebook enables you for examples 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/VictorMorand/llm2ner/blob/main/Notebooks/ToMMeR_Demo.ipynb)
 
 ### Running experiments
 
@@ -75,6 +77,15 @@ We depend on several key packages:
 
 ## Citation
 
-If you find this work useful, please cite the associated publication:
-```
+If you find this work useful, please cite the associated paper:
+```yaml
+@misc{morand2025tommerefficiententity,
+      title={ToMMeR -- Efficient Entity Mention Detection from Large Language Models}, 
+      author={Victor Morand and Nadi Tomeh and Josiane Mothe and Benjamin Piwowarski},
+      year={2025},
+      eprint={2510.19410},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2510.19410}, 
+}
 ```

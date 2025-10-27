@@ -51,12 +51,12 @@ class ToMMeR(NERmodel,
     model_card_template=CARD_TEMPLATE,
     tags=["torch", "transformers", "llm", "ner"],
     repo_url="https://github.com/VictorMorand/llm2ner",
-    paper_url="https://arxiv.org/abs/???",
+    paper_url="https://arxiv.org/abs/2510.19410",
 ):
     """ToMMer Model : Token Matching Mention Recognition
     ToMMeR is an attention based model for Entity Mention Recognition.
 
-    For more information, see the related paper : https://arxiv.org/abs/2510.09421
+    For more information, see the related paper : https://arxiv.org/abs/2510.19410
     """
 
     llm_name: Param[str]
