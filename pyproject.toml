@@ -1,6 +1,6 @@
 [project]
 name = "llm2ner"
-version = "0.1.0"
+version = "0.2.0"
 description = "Codebase for using and training ToMMer models : Token Matching Entity Recognition"
 readme = "README.md"
 requires-python = ">=3.10,!=3.11"
