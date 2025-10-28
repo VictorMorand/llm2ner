@@ -34,7 +34,6 @@ from experimaestro import (
     LightweightTask,
     Meta,
 )
-from rotary_embedding_torch import RotaryEmbedding
 
 # Our code
 from llm2ner import utils, masks, heuristics
@@ -70,7 +69,7 @@ class MHSA_NER(NERmodel):
     version: Constant[str] = "1.0"
 
     # Public attributes (initialized in __post_init__)
-    rotary: RotaryEmbedding
+    rotary
     Q: nn.Linear
     K: nn.Linear
     V: nn.Linear
@@ -83,6 +82,13 @@ class MHSA_NER(NERmodel):
         self.scale = 1 if self.use_cosine else 1 / (self.rank**0.5)
 
         if self.use_rotary:
+            try:
+                from rotary_embedding_torch import RotaryEmbedding
+            except ImportError:
+                raise ImportError(
+                    "Please install rotary-embedding-torch package: pip install rotary-embedding-torch"
+                )
+
             llm_config = convert_hf_model_config(get_official_model_name(self.llm_name))
             self.rotary = RotaryEmbedding(
                 dim=self.rank,

@@ -41,7 +41,6 @@ from experimaestro import (
     Param,
     Constant,
 )
-from rotary_embedding_torch import RotaryEmbedding
 
 # Our code
 from llm2ner import utils, masks, heuristics
