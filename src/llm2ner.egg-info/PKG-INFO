@@ -17,7 +17,6 @@ Requires-Dist: plotly>=6.0.1
 Requires-Dist: scikit-learn>=1.6.1
 Requires-Dist: spacy>=3.8.7
 Requires-Dist: tensorboard>=2.20.0
-Requires-Dist: torch<2.8,>=2.1
 Requires-Dist: transformer-lens>=2.15.0
 Dynamic: license-file
 
