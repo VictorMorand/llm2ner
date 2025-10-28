@@ -28,6 +28,13 @@ package = true
 llm2ner = { workspace = true }
 experimaestro = { git = "https://github.com/experimaestro/experimaestro-python", tag = "2.0.0a1" }
 
+[tool.setuptools]
+# ...
+include-package-data = true
+
+[tool.setuptools.package-data]
+"llm2ner.models" = ["*.md"]
+
 [tool.uv.workspace]
 members = [
     ".",

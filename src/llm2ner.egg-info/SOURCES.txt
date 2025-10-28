@@ -22,6 +22,7 @@ src/llm2ner.egg-info/top_level.txt
 src/llm2ner/baselines/__init__.py
 src/llm2ner/baselines/annotate_api.py
 src/llm2ner/baselines/llmAsJudge.py
+src/llm2ner/models/ToMMeR.md
 src/llm2ner/models/TokenMatching.py
 src/llm2ner/models/__init__.py
 src/llm2ner/models/mhsa.py
