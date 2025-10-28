@@ -16,60 +16,26 @@ paper: {{paper_url}}
 ---
 
 # {{model_id}}
-A generalist Mention Recognition model trained on top of layer {{layer}} from `{{llm_name}}` .  
-It predicts a probability for every (start, end) (continuous) token span.
 
-## General ToMMeR Framework
-- Inputs:
-  - tokens (batch, seq): tokens to process, 
-  - model: LLM to extract representation from.
-- Outputs: (batch, seq, seq) matrix (masked outside valid spans)
+ToMMeR is a lightweight probing model extracting emergent mention detection capabilities from early layers representations of any LLM backbone, achieving high Zero Shot recall across a wide set of 13 NER benchmarks.
 
-## Model Details
-- Base LLM: {{llm_name}}
-- Layer: {{layer}} (representations for ToMMeR are extracted at this transformer layer, the others can be cut if not needed)
+## Checkpoint Details
 
-{{eval_par}}
+| Property  | Value |
+|-----------|-------|
+| Base LLM  | `{{llm_name}}` |
+| Layer     | {{layer}}|
+| #Params   | {{n_params}} |
 
 
 # Usage
 
 ## Installation
 
-Our code can be installed with pip:
+Our code can be installed with pip+git, Please visit the [repository]({{repo_url}}) for more details.
 
 ```bash
 pip install git+{{repo_url}}.git
-```
-Please visit the [repository]({{repo_url}}) for more details.
-
-## Raw inference
-By default, ToMMeR outputs span probabilities, but we also propose built-in options for decoding entities.
-```python
-
-tommer = ToMMeR.from_pretrained({{model_id}})
-# load Backbone llm, optionnally cut the unused layer to save GPU space.
-llm = llm2ner.utils.load_llm( tommer.llm_name, cut_to_layer=tommer.layer,) 
-tommer.to(llm.device)
-
-#### Raw Inference
-text = ["Large language models are awesome"]
-print(f"Input text: {text[0]}")
-
-#tokenize in shape (1, seq_len)
-tokens = model.tokenizer(text, return_tensors="pt")["input_ids"].to(device)
-# Output raw scores
-output = tommer.forward(tokens, model) # (batch_size, seq_len, seq_len)
-print(f"Raw Output shape: {output.shape}")
-
-#use given decoding strategy to infer entities
-entities = tommer.infer_entities(tokens=tokens, model=model, threshold=0.5, decoding_strategy="greedy")
-str_entities = [ model.tokenizer.decode(tokens[0,b:e+1]) for b, e in entities[0]]
-print(f"Predicted entities: {str_entities}")
-
->>> Input text: Large language models are awesome
->>> Raw Output shape: torch.Size([1, 6, 6])
->>> Predicted entities: ['Large language models']
 ```
 
 ## Fancy Outputs
@@ -78,7 +44,7 @@ print(f"Predicted entities: {str_entities}")
 import llm2ner
 from llm2ner import ToMMeR
 
-tommer = ToMMeR.from_pretrained({{model_id}})
+tommer = ToMMeR.from_pretrained("llm2ner/{{model_id}}")
 # load Backbone llm, optionnally cut the unused layer to save GPU space.
 llm = llm2ner.utils.load_llm( tommer.llm_name, cut_to_layer=tommer.layer,) 
 tommer.to(llm.device)
@@ -203,7 +169,44 @@ that make them suitable for a wide range of
 </div>
 
 
+## Raw inference
+By default, ToMMeR outputs span probabilities, but we also propose built-in options for decoding entities.
+
+- Inputs:
+  - tokens (batch, seq): tokens to process, 
+  - model: LLM to extract representation from.
+- Outputs: (batch, seq, seq) matrix (masked outside valid spans)
+
+```python
+
+tommer = ToMMeR.from_pretrained("llm2ner/{{model_id}}")
+# load Backbone llm, optionnally cut the unused layer to save GPU space.
+llm = llm2ner.utils.load_llm( tommer.llm_name, cut_to_layer=tommer.layer,) 
+tommer.to(llm.device)
+
+#### Raw Inference
+text = ["Large language models are awesome"]
+print(f"Input text: {text[0]}")
+
+#tokenize in shape (1, seq_len)
+tokens = model.tokenizer(text, return_tensors="pt")["input_ids"].to(device)
+# Output raw scores
+output = tommer.forward(tokens, model) # (batch_size, seq_len, seq_len)
+print(f"Raw Output shape: {output.shape}")
+
+#use given decoding strategy to infer entities
+entities = tommer.infer_entities(tokens=tokens, model=model, threshold=0.5, decoding_strategy="greedy")
+str_entities = [ model.tokenizer.decode(tokens[0,b:e+1]) for b, e in entities[0]]
+print(f"Predicted entities: {str_entities}")
+
+>>> Input text: Large language models are awesome
+>>> Raw Output shape: torch.Size([1, 6, 6])
+>>> Predicted entities: ['Large language models']
+```
+
 Please visit the [repository]({{repo_url}}) for more details and a demo notebook.
+
+{{eval_par}}
 
 ## Citation
 If using this model or the approach, please cite the associated paper:

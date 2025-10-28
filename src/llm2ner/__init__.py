@@ -1,7 +1,7 @@
 import os
 # by default, set env to offline mode. Othewise api call slows everything down...
 # Will be overwritten if needed to download models or datasets
-HF_OFFLINE = "1"  # set to "0" to go online
+HF_OFFLINE = "0"  # set to "0" to go online
 
 for var in [
     "HF_EVALUATE_OFFLINE",

@@ -132,6 +132,8 @@ class ToMMeR(NERmodel,
         # load all named parameters from the config
         cfg_dict = self.__config__.__xpm__.values
         cfg_dict['model_id'] = self.get_model_id()
+        cfg_dict['n_params'] = f"{self.count_parameters()/1e3:.1f}K"
+
         return super().generate_model_card(**cfg_dict | kwargs)
 
     @torch.no_grad()

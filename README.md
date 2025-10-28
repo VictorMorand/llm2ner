@@ -41,7 +41,8 @@ uv pip install -e git+https://github.com/VictorMorand/llm2ner.git
 #### Using `uv`
 
 We suggest using [uv](https://docs.astral.sh/uv/), a super fast package manager.
-The following commands will clone the repo and install it within a new ready-to-use `.venv` with all dependencies.
+The following commands will clone the repo and install it within a new ready-to-use `.venv` with all dependencies in a few minutes.
+
 ```bash
 git clone https://github.com/VictorMorand/llm2ner.git
 cd llm2ner
@@ -50,8 +51,9 @@ uv sync
 
 ## Usage
 
+- We release all trained models on HugginFace: 🤗 https://huggingface.co/llm2ner/models 
+- Please see [`ToMMeR_Demo.ipynb`](./Notebooks/ToMMeR_Demo.ipynb) notebook enables you for examples 
 
-Please see [`ToMMeR_Demo.ipynb`](./Notebooks/ToMMeR_Demo.ipynb) notebook enables you for examples 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/VictorMorand/llm2ner/blob/main/Notebooks/ToMMeR_Demo.ipynb)
 
 ### Running experiments
