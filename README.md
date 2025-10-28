@@ -1,12 +1,9 @@
 <div align="center">
 
-[![arXiv](https://img.shields.io/badge/arXiv-2408.08656-b31b1b.svg)](https://arxiv.org/abs/2510.19410)
-[![Repository version](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FVictorMorand%2Fllm2ner%2Fmain%2Fpyproject.toml&query=project.version&label=version&color=blue)](https://github.com/VictorMorand/llm2ner)
-
 <h1>ToMMeR – Efficient Entity Mention Detection from Large Language Models</h1>
 <div>
     <a href='https://victormorand.github.io/' target='_blank'>Victor Morand</a><sup>1</sup>&emsp;
-    <a target='_blank'>Nadi Tomeh</a><sup>1</sup>&emsp;
+    <a target='_blank'>Nadi Tomeh</a><sup>2</sup>&emsp;
     <a href='https://scholar.google.com/citations?user=V-Nyr0wAAAAJ' target='_blank'>Josiane Mothe</a><sup>3</sup>&emsp;
     <a href='https://www.piwowarski.fr' target='_blank'>Benjamin Piwowarski</a><sup>1</sup>&emsp;
 </div>
@@ -18,16 +15,13 @@
 </div>
 <br>
 
+[![arXiv](https://img.shields.io/badge/arXiv-2408.08656-b31b1b.svg)](https://arxiv.org/abs/2510.19410)
+[![Repository version](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FVictorMorand%2Fllm2ner%2Fmain%2Fpyproject.toml&query=project.version&label=version&color=blue)](https://github.com/VictorMorand/llm2ner)
 
-<br>
-
+<img src="Assets/AbstractFig.png" alt="ToMMeR Architecture" width="600"/>
 </div>
 
-<p align="center">
-    <img src="Assets/AbstractFig.png" alt="ToMMeR Architecture" width="600"/>
-</p>
-
-**Figure 1:**  ToMMeR is a lightweight probing model extracting emergent mention detection capabilities from early layers representations of any LLM backbone, achieving high Zero Shot recall across a wide set of 13 NER benchmarks.
+ToMMeR is a lightweight probing model extracting emergent mention detection capabilities from early layers representations of any LLM backbone, achieving high Zero Shot recall across a wide set of 13 NER benchmarks.
 
 
 ### Abstract

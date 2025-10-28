@@ -29,6 +29,10 @@ It predicts a probability for every (start, end) (continuous) token span.
 - Base LLM: {{llm_name}}
 - Layer: {{layer}} (representations for ToMMeR are extracted at this transformer layer, the others can be cut if not needed)
 
+{{eval_par}}
+
+
+# Usage
 
 ## Installation
 
@@ -37,12 +41,10 @@ Our code can be installed with pip:
 ```bash
 pip install git+{{repo_url}}.git
 ```
+Please visit the [repository]({{repo_url}}) for more details.
 
-## Usage
-
+## Raw inference
 By default, ToMMeR outputs span probabilities, but we also propose built-in options for decoding entities.
-
-### Basic
 ```python
 
 tommer = ToMMeR.from_pretrained({{model_id}})
@@ -70,7 +72,7 @@ print(f"Predicted entities: {str_entities}")
 >>> Predicted entities: ['Large language models']
 ```
 
-### Fancy Outputs
+## Fancy Outputs
 
 ```python
 import llm2ner
