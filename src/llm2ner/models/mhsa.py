@@ -69,7 +69,6 @@ class MHSA_NER(NERmodel):
     version: Constant[str] = "1.0"
 
     # Public attributes (initialized in __post_init__)
-    rotary
     Q: nn.Linear
     K: nn.Linear
     V: nn.Linear
@@ -403,6 +402,12 @@ class MultiHeadAttention(nn.Module):
         self.scale = 1 / (rank**0.5)
 
         if use_rotary:
+            try:
+                from rotary_embedding_torch import RotaryEmbedding
+            except ImportError:
+                raise ImportError(
+                    "Please install rotary-embedding-torch package: pip install rotary-embedding-torch"
+                )
             llm_config = convert_hf_model_config(get_official_model_name(llm_name))
             self.rotary = RotaryEmbedding(
                 dim=rank,

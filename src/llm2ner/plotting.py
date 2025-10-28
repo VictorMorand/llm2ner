@@ -57,7 +57,7 @@ def display_entities(text, tokenizer, entities):
         else:
             doc.spans["sc"].append(span)
     # Display in notebook
-    return displacy.render(doc, style="span", options={"colors": {"PRED": "lightblue",}})
+    return HTML(displacy.render(doc, style="span", options={"colors": {"PRED": "lightblue",}}, jupyter=False))
 
 
 def display_compare_entities(text, tokenizer, predicted_entities, gold_entities):

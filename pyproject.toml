@@ -19,7 +19,6 @@ dependencies = [
     "tensorboard>=2.20.0",
     "torch>=2.1,<2.8",
     "transformer-lens>=2.15.0",
-    "transformers<4.54.0",
 ]
 
 [tool.uv]

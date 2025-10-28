@@ -1,6 +1,6 @@
 version = 1
 revision = 1
-requires-python = ">=3.10"
+requires-python = ">=3.10, !=3.11"
 resolution-markers = [
     "python_full_version == '3.12.*' and platform_machine == 'aarch64' and sys_platform == 'linux'",
     "python_full_version == '3.12.*' and platform_machine != 'aarch64' and sys_platform == 'linux'",
@@ -2283,7 +2283,6 @@ dependencies = [
     { name = "tensorboard" },
     { name = "torch" },
     { name = "transformer-lens" },
-    { name = "transformers" },
 ]
 
 [package.dev-dependencies]
@@ -2309,7 +2308,6 @@ requires-dist = [
     { name = "tensorboard", specifier = ">=2.20.0" },
     { name = "torch", specifier = ">=2.1,<2.8" },
     { name = "transformer-lens", specifier = ">=2.15.0" },
-    { name = "transformers", specifier = "<4.54.0" },
 ]
 
 [package.metadata.requires-dev]

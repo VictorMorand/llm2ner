@@ -12,4 +12,3 @@ spacy>=3.8.7
 tensorboard>=2.20.0
 torch<2.8,>=2.1
 transformer-lens>=2.15.0
-transformers<4.54.0
