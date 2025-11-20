@@ -639,6 +639,104 @@ def compare_inferences(inferences: List[InferredDataset]) -> dict:
 
 
 ### Child classes for specific datasets
+
+class JSONDataSet(NERDataset):
+    def __init__(
+        self,
+        data: Union[str, Path, List],
+        model: HookedTransformer,
+        mode: str = PATTERN_MODES.FIRST,
+        max_ent_length=None,
+        max_length=None,
+        limit_samples: Optional[int] = None,
+        **kwargs,
+    ):
+        """Load a dataset from a json file containing a list of dictionaries with 'sentence' and 'entities' keys.
+        Will tokenize the sentence and tag compute tags for each token based on the given entities.
+
+        Args:
+            data: path to a json file or raw data (iterable of dictionaries)
+            model: the HookedTransformer model we will work with, used to tokenize the text.
+            max_ent_length: maximum length of an entity
+            max_length: maximum length of a sentence
+        """
+        super().__init__(
+            model=model,
+            mode=mode, 
+            max_ent_length=max_ent_length, 
+            max_length=max_length,
+            **kwargs
+        )
+        if isinstance(data, (str, Path)):
+            raw_data = json.load(open(data))
+        else:
+            #assume data is already a list of dicts
+            assert all(isinstance(d, dict) for d in data), "data must be a path to a json file or a list of dictionaries"
+            raw_data = data
+
+        if limit_samples is not None:
+            raw_data = raw_data[:limit_samples]
+
+        for item in tqdm(raw_data, desc="Processing Data"):
+            if len(item["entities"]) == 0:
+                continue
+            self.data.append(self.extract_from_item(item))
+
+        self.__post_init__()
+
+    def extract_from_item(self, item):
+        text = item["sentence"]
+        entities = item["entities"]
+        found_entities = []
+        data_idx = item.get("data_id", -1)
+
+        # tokenize text
+        encoding = self.tokenizer(
+            text, return_offsets_mapping=True, return_tensors="pt", truncation=True
+        )
+
+        offsets = encoding["offset_mapping"][0]  # shape: (num_tokens, 2)
+        tokens = encoding["input_ids"][0]  # shape: (num_tokens,)
+        str_tokens = to_str_tokens(tokens, self.tokenizer)
+        ner_tags = [0] * len(str_tokens)
+
+        # print(text)
+        # print("str_tokens", str_tokens)
+        # print("entities", entities)
+        for entity in entities:
+            token_start, token_end = char_to_token_pos(*entity["pos"], offsets)
+
+            if token_start != -1:  # entity found
+                entity["tok_pos"] = (token_start, token_end)
+                ent_type = entity["type"]
+                if ent_type not in self.type2id:
+                    self.type2id[ent_type] = len(self.type2id)
+                    self.id2type[self.type2id[ent_type]] = ent_type
+                entity["class"] = self.type2id[ent_type]
+
+                ner_tags[token_start] = 1
+                ner_tags[token_start + 1 : token_end + 1] = [2] * (
+                    token_end - token_start
+                )
+                found_entities.append(entity)
+            else:
+                logging.warning(f"Sample {data_idx}: Entity {entity} not found in Text, probably due to tokenization truncation.")
+                # logging.warning(''.join(str_tokens))
+                # logging.warning(f"char_start: {char_start}, char_end: {char_end}")
+                # logging.warning(f"str_tokens: {str_tokens}")
+                # logging.warning(f"ner_tags: {ner_tags}")
+                continue
+
+        return {
+            "text": text,
+            "token_tags": ner_tags,
+            "str_tokens": str_tokens,
+            "entities": found_entities,
+            "ner_tags": ner_tags,
+            "data_id": data_idx,
+        }
+
+# deprecated, use JSONDataSet instead
 class CoNLLDataset(NERDataset):
     def __init__(
         self,
@@ -702,99 +800,6 @@ class CoNLLDataset(NERDataset):
                 item["str_tokens"][1:],  # the function expects tokens without bos token
                 item["ner_tags"],
             )
-
-
-class JSONDataSet(NERDataset):
-    def __init__(
-        self,
-        data_path,
-        model: HookedTransformer,
-        mode: str = PATTERN_MODES.FIRST,
-        max_ent_length=None,
-        max_length=None,
-        limit_samples: Optional[int] = None,
-        **kwargs,
-    ):
-        """Load a dataset from a json file containing a list of dictionaries with 'sentence' and 'entities' keys.
-        Will tokenize the sentence and tag compute tags for each token based on the given entities.
-
-        Args:
-            data_path: path to the json file
-            model: the HookedTransformer model we will work with, used to tokenize the text.
-            max_ent_length: maximum length of an entity
-            max_length: maximum length of a sentence
-        """
-        super().__init__(
-            model=model,
-            mode=mode, 
-            max_ent_length=max_ent_length, 
-            max_length=max_length,
-            **kwargs
-        )
-
-        raw_data = json.load(open(data_path))
-
-        if limit_samples is not None:
-            raw_data = raw_data[:limit_samples]
-
-        for item in tqdm(raw_data, desc="Processing Data"):
-            if len(item["entities"]) == 0:
-                continue
-            self.data.append(self.extract_from_item(item))
-
-        self.__post_init__()
-
-    def extract_from_item(self, item):
-        text = item["sentence"]
-        entities = item["entities"]
-        found_entities = []
-        data_idx = item.get("data_id", -1)
-
-        # tokenize text
-        encoding = self.tokenizer(
-            text, return_offsets_mapping=True, return_tensors="pt", truncation=True
-        )
-
-        offsets = encoding["offset_mapping"][0]  # shape: (num_tokens, 2)
-        tokens = encoding["input_ids"][0]  # shape: (num_tokens,)
-        str_tokens = to_str_tokens(tokens, self.tokenizer)
-        ner_tags = [0] * len(str_tokens)
-
-        # print(text)
-        # print("str_tokens", str_tokens)
-        # print("entities", entities)
-        for entity in entities:
-            token_start, token_end = char_to_token_pos(*entity["pos"], offsets)
-
-            if token_start != -1:  # entity found
-                entity["tok_pos"] = (token_start, token_end)
-                ent_type = entity["type"]
-                if ent_type not in self.type2id:
-                    self.type2id[ent_type] = len(self.type2id)
-                    self.id2type[self.type2id[ent_type]] = ent_type
-                entity["class"] = self.type2id[ent_type]
-
-                ner_tags[token_start] = 1
-                ner_tags[token_start + 1 : token_end + 1] = [2] * (
-                    token_end - token_start
-                )
-                found_entities.append(entity)
-            else:
-                logging.warning(f"Sample {data_idx}: Entity {entity} not found in Text, probably due to tokenization truncation.")
-                # logging.warning(''.join(str_tokens))
-                # logging.warning(f"char_start: {char_start}, char_end: {char_end}")
-                # logging.warning(f"str_tokens: {str_tokens}")
-                # logging.warning(f"ner_tags: {ner_tags}")
-                continue
-
-        return {
-            "text": text,
-            "token_tags": ner_tags,
-            "str_tokens": str_tokens,
-            "entities": found_entities,
-            "ner_tags": ner_tags,
-            "data_id": data_idx,
-        }
 
 
 # Batching is delicate here because of the broad distribution of context lengths

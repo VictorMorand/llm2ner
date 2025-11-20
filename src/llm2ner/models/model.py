@@ -274,7 +274,7 @@ def train(
     # move model to device if available
     if torch.cuda.is_available():
         use_cuda = True
-        module.cuda()
+        module.to(model.device)
     else:
         use_cuda = False
         module.cpu()
@@ -691,9 +691,9 @@ class NERmodel(
             inputs = model.tokenizer(
                 texts, padding=True, padding_side="right", return_tensors="pt", return_offsets_mapping=True, truncation=True,
             )
-            tokens = inputs["input_ids"].cuda()
+            tokens = inputs["input_ids"].to(model.device)
             offsets = inputs.pop("offset_mapping")
-            attn_mask = inputs["attention_mask"].cuda()
+            attn_mask = inputs["attention_mask"].to(model.device)
 
             # get NER tags
             b_pred_entities, b_span_probs = self.infer_entities(
@@ -773,8 +773,8 @@ class NERmodel(
                 return_offsets_mapping=True,
             )
             offsets = inputs.pop("offset_mapping")
-            tokens = inputs["input_ids"].cuda()
-            attn_mask = inputs["attention_mask"].cuda()
+            tokens = inputs["input_ids"].to(model.device)
+            attn_mask = inputs["attention_mask"].to(model.device)
 
             b_entities, b_span_probs = self.infer_entities(
                 tokens,
@@ -824,7 +824,7 @@ class NERmodel(
         def execute(self):
             """Called when this task is run"""
 
-            ner_model = self.ner_model.cuda()
+            ner_model = self.ner_model.to(model.device)
             logging.info(f"Loaded model {ner_model}")
 
             llm_name = ner_model.llm_name
