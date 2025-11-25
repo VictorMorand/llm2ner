@@ -53,10 +53,59 @@ uv sync
 
 ## Usage
 
-
-- We release all trained models on HugginFace: 🤗 https://huggingface.co/llm2ner/models 
-- Please see [`ToMMeR_Demo.ipynb`](./Notebooks/ToMMeR_Demo.ipynb) notebook enables you for examples 
+- All trained models are available on HugginFace: 🤗 https://huggingface.co/llm2ner/models 
+- See the demo notebook [`ToMMeR_Demo.ipynb`](./Notebooks/ToMMeR_Demo.ipynb)
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/VictorMorand/llm2ner/blob/main/Notebooks/ToMMeR_Demo.ipynb)
+
+### Raw inference
+```py
+
+tommer = ToMMeR.from_pretrained("llm2ner/ToMMeR-Llama-3.2-1B_L3_R64")
+# load Backbone llm, optionnally cut the unused layer to save GPU space.
+llm = llm2ner.utils.load_llm( tommer.llm_name, cut_to_layer=tommer.layer,) 
+tommer.to(llm.device)
+
+#### Raw Inference
+text = ["Large language models are awesome"]
+print(f"Input text: {text[0]}")
+
+#tokenize in shape (1, seq_len)
+tokens = model.tokenizer(text, return_tensors="pt")["input_ids"].to(device)
+# Output raw scores
+output = tommer.forward(tokens, model) # (batch_size, seq_len, seq_len)
+print(f"Raw Output shape: {output.shape}")
+
+#use given decoding strategy to infer entities
+entities = tommer.infer_entities(tokens=tokens, model=model, threshold=0.5, decoding_strategy="greedy")
+str_entities = [ model.tokenizer.decode(tokens[0,b:e+1]) for b, e in entities[0]]
+print(f"Predicted entities: {str_entities}")
+
+>>> Input text: Large language models are awesome
+>>> Raw Output shape: torch.Size([1, 6, 6])
+>>> Predicted entities: ['Large language models']
+```
+
+### HTML output
+We also provide plotting options, outputting html for fancy notebook / web app display.
+```py
+import llm2ner
+from llm2ner import ToMMeR
+
+tommer = ToMMeR.from_pretrained("llm2ner/ToMMeR-Llama-3.2-1B_L3_R64")
+# load Backbone llm, optionnally cut the unused layer to save GPU space.
+llm = llm2ner.utils.load_llm( tommer.llm_name, cut_to_layer=tommer.layer,) 
+tommer.to(llm.device)
+
+text = "Large language models are awesome. While trained on language modeling, they exhibit emergent Zero Shot abilities that make them suitable for a wide range of tasks, including Named Entity Recognition (NER). "
+
+#fancy interactive output
+outputs = llm2ner.plotting.demo_inference( text, tommer, llm,
+    decoding_strategy="threshold",  # or "greedy" for flat segmentation
+    threshold=0.5, # default 50%
+    show_attn=True,
+)
+```
+
 
 ### Running experiments
 
