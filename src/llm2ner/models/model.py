@@ -34,9 +34,9 @@ from transformers.modeling_utils import PreTrainedModel
 from experimaestro import Param, Task, Meta, Param, Constant, DataPath
 
 # Our code
+from xpm_torch import Module
 from llm2ner import utils
 from llm2ner.utils import PathOutput
-from llm2ner.xpmModel import xpmTorchHubModule
 import llm2ner.data as data
 import llm2ner.decoders
 
@@ -404,17 +404,15 @@ NERmodel.from_pretrained("{model_name}")
 """
 
 
-class NERmodel(
-    xpmTorchHubModule,
-    # library_name="my-org/my-model",
-    model_card_template=CARD_TEMPLATE,
-    tags=["torch", "experimaestro"],
-    repo_url="https://github.com/VictorMorand/test-model",
-    paper_url="https://arxiv.org/abs/???",
-):
+class NERmodel(Module):
     """Main interface for NER models, should be subclassed
     A NER model is a custom pytorch model that processes given LLM representations to predict entities span probabilities.
     """
+
+    model_card_template: Constant[str] = CARD_TEMPLATE
+    tags: Constant[List[str]] = ["torch", "experimaestro"]
+    repo_url: Constant[str] = "https://github.com/VictorMorand/test-model"
+    paper_url: Constant[str] = "https://arxiv.org/abs/???"
 
     llm_name: Param[str]
     """name of the LLM that produced the representations this model is trained on"""
@@ -423,13 +421,13 @@ class NERmodel(
     """max layer at which to extract the representations, avoid to compute all LLM layers"""
 
     dim: int = None
-    """dimension of the LLM representations, initialized in __post_init__"""
+    """dimension of the LLM representations, initialized in __initialize__"""
 
     need_hookedtransformer: bool = False
     """whether the model needs the llm loaded as a HookedTransformer to compute representations"""
 
-    def __post_init__(self):
-        super().__post_init__()
+    def __initialize__(self):
+        super().__initialize__()
         if self.dim is None:
             self.dim = self.get_llm_dim()
             logging.info(f"Found hidden dimension {self.dim} for {self.llm_name}")

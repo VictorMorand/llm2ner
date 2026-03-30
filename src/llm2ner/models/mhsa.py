@@ -74,9 +74,9 @@ class MHSA_NER(NERmodel):
     V: nn.Linear
     O: nn.Linear
 
-    def __post_init__(self):
-        """Method called after instanciation of config"""
-        super().__post_init__()
+    def __initialize__(self):
+        """Method called for structural initialization"""
+        super().__initialize__()
 
         self.scale = 1 if self.use_cosine else 1 / (self.rank**0.5)
 

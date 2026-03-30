@@ -1172,7 +1172,7 @@ class TokenMatchingNER(NERmodel):
     normalize_scores: Param[str] = ""
     """Normalization method for attn scores, default none, can be 'cosine', or 'log_sigmoid' """
 
-    def __post_init__(self):
+    def __initialize__(self):
 
         # sanity checks
         assert self.method in list(
@@ -1189,8 +1189,7 @@ class TokenMatchingNER(NERmodel):
             self.layer is not None
         ), f"layer should be set to the layers of the model used to extract the representations"
 
-        super().__init__()
-        super().__post_init__()
+        super().__initialize__()
 
         self.apply_softmax = True if self.method == METHODS.INTER_FIRST_SOFT else False
         self.mask_bos = False if self.method == METHODS.INTER_FIRST_SOFT else True
@@ -1951,14 +1950,12 @@ class CLQK_NER(TokenMatchingNER):
     need_hookedtransformer: bool = True
     """This model needs a HookedTransformer to extract query and key scores"""
 
-    def __post_init__(self):
-        super().__init__()
-
+    def __initialize__(self):
         self.layer = max(
             self.layers
         )  # needed to use get_representations from parent class
 
-        super().__post_init__()
+        super().__initialize__()
 
         try :
             from transformer_lens import HookedTransformer
@@ -2082,9 +2079,8 @@ class AttentionLCNER(TokenMatchingNER):
 
     mask_bos: bool = True
 
-    def __post_init__(self):
-        
-        super().__init__()
+    def __initialize__(self):
+        super().__initialize__()
 
         if self.dim is None:
             self.dim = self.get_llm_dim()
@@ -2314,7 +2310,7 @@ class AttentionCNN_NER(NERmodel):
     layer: Param[int]
     """layer of LLM used to extract the representations"""
 
-    def __post_init__(self):
+    def __initialize__(self):
         """Initialize the model, paramters and parent classes
         This function is called when the model is initialized, with model.instance() (done automatically if given as a Task parameter)
         """
@@ -2322,7 +2318,8 @@ class AttentionCNN_NER(NERmodel):
         assert self.method in list(
             CNN_METHODS
         ), f"Aggregation method '{self.method}' not implemented, choose among: {', '.join(CNN_METHODS)}"
-        super().__init__()
+        
+        super().__initialize__()
 
         self.attn = SelfAttention(
             model_dim=self.model_dim,

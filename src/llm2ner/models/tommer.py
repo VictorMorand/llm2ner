@@ -46,18 +46,17 @@ from llm2ner.models.TokenMatching import (
 CARD_TEMPLATE_FILE = Path(__file__).parent / "ToMMeR.md"
 CARD_TEMPLATE = CARD_TEMPLATE_FILE.read_text()
 
-class ToMMeR(NERmodel,
-    library_name="VictorMorand/ToMMeR",
-    model_card_template=CARD_TEMPLATE,
-    tags=["torch", "transformers", "llm", "ner"],
-    repo_url="https://github.com/VictorMorand/llm2ner",
-    paper_url="https://arxiv.org/abs/2510.19410",
-):
+class ToMMeR(NERmodel):
     """ToMMer Model : Token Matching Mention Recognition
     ToMMeR is an attention based model for Entity Mention Recognition.
 
     For more information, see the related paper : https://arxiv.org/abs/2510.19410
     """
+
+    model_card_template: Constant[str] = CARD_TEMPLATE
+    tags: Constant[List[str]] = ["torch", "transformers", "llm", "ner"]
+    repo_url: Constant[str] = "https://github.com/VictorMorand/llm2ner"
+    paper_url: Constant[str] = "https://arxiv.org/abs/2510.19410"
 
     llm_name: Param[str]
     """Name or Id of LLM  used to extract the representations"""
@@ -81,7 +80,7 @@ class ToMMeR(NERmodel,
     normalize_scores: Param[str] = ""
     """Normalization method for attn scores, default none, can be 'cosine', or 'log_sigmoid' """
 
-    def __post_init__(self):
+    def __initialize__(self):
         assert (
             self.llm_name is not None
         ), f"llm_name should be set to the name of the model used to extract the representations"
@@ -93,8 +92,7 @@ class ToMMeR(NERmodel,
             self.layer is not None
         ), f"layer should be set to the layers of the model used to extract the representations"
 
-        super().__init__()
-        super().__post_init__()
+        super().__initialize__()
 
         self.mask_bos = True
         self.model_dim = self.dim
