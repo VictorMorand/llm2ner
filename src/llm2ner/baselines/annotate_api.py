@@ -149,21 +149,21 @@ class LLMannotation(Task):
 
     llm_name: Param[str]
     """Name of the LLM model to use (as known by the LLM server)"""
-    data_name: Param[str] = "MultiNERD"
+    data_name: Param[str] = field(default="MultiNERD", ignore_default=True)
     """Name of the dataset to use (CoNLL 2003, OntoNotes 5, WNUT 17, etc.)"""
     max_length: Param[int]
     """Maximum sequence length"""
     max_ent_length: Param[int]
     """Maximum entity length in chars"""
-    limit_samples: Param[int] = -1
+    limit_samples: Param[int] = field(default=-1, ignore_default=True)
     """Limit the number of samples to process, -1 for no limit"""
 
     # Meta Params
     version: Constant[str] = "1.2"
     """Version of the task definition"""
-    data_folder: Meta[str] = ""
+    data_folder: Meta[str] = field(default="", ignore_default=True)
     """Path to the folder containing the datasets"""
-    api_url: Meta[str] = ""
+    api_url: Meta[str] = field(default="", ignore_default=True)
     """URL of the LLM API server"""
 
     def task_outputs(self, dep):

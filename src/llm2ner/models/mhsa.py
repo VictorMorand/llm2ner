@@ -26,6 +26,7 @@ from transformer_lens.loading_from_pretrained import (
 
 # xpm and misc
 from experimaestro import (
+    field,
     Param,
     Constant,
     Config,
@@ -54,17 +55,17 @@ class MHSA_NER(NERmodel):
 
     sliding_window: Param[int]
 
-    causal_mask: Param[bool] = False
+    causal_mask: Param[bool] = field(default=False, ignore_default=True)
 
-    use_rotary: Param[bool] = False
+    use_rotary: Param[bool] = field(default=False, ignore_default=True)
 
-    use_cosine: Param[bool] = False
+    use_cosine: Param[bool] = field(default=False, ignore_default=True)
 
-    use_pre_LN: Param[bool] = False
+    use_pre_LN: Param[bool] = field(default=False, ignore_default=True)
 
-    equal_q_k: Param[bool] = False
+    equal_q_k: Param[bool] = field(default=False, ignore_default=True)
 
-    mask_bos: Param[bool] = False
+    mask_bos: Param[bool] = field(default=False, ignore_default=True)
 
     version: Constant[str] = "1.0"
 

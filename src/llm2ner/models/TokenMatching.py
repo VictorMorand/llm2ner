@@ -31,7 +31,8 @@ from transformer_lens.loading_from_pretrained import (
 from transformers import PreTrainedTokenizerBase
 
 # xpm and misc
-from experimaestro import (
+from experimaestro import  (
+    field,
     Config,
     Param,
     DataPath,
@@ -1150,26 +1151,26 @@ class TokenMatchingNER(NERmodel):
     llm_name: Param[str]
     """name of LLM  used to extract the representations"""
 
-    layer: Param[int] = 0
+    layer: Param[int] = field(default=0, ignore_default=True)
     """List of layers to extract the query and key scores from"""
 
-    rank: Param[int] = 100
+    rank: Param[int] = field(default=100, ignore_default=True)
     """Rank of the Query / Keys projection"""
 
-    method: Param[str] = "inter_first"
+    method: Param[str] = field(default="inter_first", ignore_default=True)
     """Method to compute the span probabilities, choose among METHODS)"""
 
     ## attn config
-    causal_mask: Param[bool] = True
+    causal_mask: Param[bool] = field(default=True, ignore_default=True)
     """Whether to use a causal mask for the attention scores, default True"""
 
-    sliding_window: Param[int] = 0
+    sliding_window: Param[int] = field(default=0, ignore_default=True)
     """Normalization method for attn scores, default none, can be 'cosine', or 'log_sigmoid' """
 
-    use_cosine: Param[bool] = False
+    use_cosine: Param[bool] = field(default=False, ignore_default=True)
     """Whether to use cosine normalization for the attention scores, default False"""
 
-    normalize_scores: Param[str] = ""
+    normalize_scores: Param[str] = field(default="", ignore_default=True)
     """Normalization method for attn scores, default none, can be 'cosine', or 'log_sigmoid' """
 
     def __initialize__(self):
@@ -1943,7 +1944,7 @@ class CLQK_NER(TokenMatchingNER):
     overriding representation extraction to use directly query and key scores from the attention layer of an LLM
     """
 
-    layers: Param[List[int]] = [0]
+    layers: Param[List[int]] = field(default=[0], ignore_default=True)
     """List of layers to extract the query and key scores from, layer will be set as max(layers)"""
 
     #overrides from parent class
@@ -2063,10 +2064,10 @@ class AttentionLCNER(TokenMatchingNER):
     The attention scores are retrieved using the TransformerLens library.
     """
 
-    layers: Param[List[int]] = [0]
+    layers: Param[List[int]] = field(default=[0], ignore_default=True)
     """List of layers to extract the attention scores from, layer will be set as max(layers)"""
 
-    normalize_scores: Param[str] = "logits"
+    normalize_scores: Param[str] = field(default="logits", ignore_default=True)
     """Normalization method for attn scores,
     - logits : keep raw logits from scalar product of query and key
     - softmax: will rather extract scores _after_ the softmax in the LLM
@@ -2284,27 +2285,27 @@ class AttentionCNN_NER(NERmodel):
 
     # -----  Model config -----
     # Projections
-    model_dim: Param[int] = 512
+    model_dim: Param[int] = field(default=512, ignore_default=True)
     """Model dimension"""
-    rank: Param[int] = 100
+    rank: Param[int] = field(default=100, ignore_default=True)
     """Rank of the Query / Keys projection"""
-    causal_mask: Param[bool] = True
+    causal_mask: Param[bool] = field(default=True, ignore_default=True)
     """Whether to use a causal mask for the attention scores, default True"""
-    mask_bos: Param[bool] = True
+    mask_bos: Param[bool] = field(default=True, ignore_default=True)
     """Whether to mask the first token (BOS) in the attention scores, default True"""
-    sliding_window: Param[int] = 0
+    sliding_window: Param[int] = field(default=0, ignore_default=True)
     """Whether to use a sliding window for the attention scores, default 0 (no sliding window)"""
 
     # CNN config
-    kernel_padding: Param[List[int]] = DEFAULT_KERNEL_PADDING  # (left right top bottom)
+    kernel_padding: Param[List[int]] = field(default=DEFAULT_KERNEL_PADDING, ignore_default=True)  # (left right top bottom)
     """ Kernel padding for the CNN : (left, right, top, bottom)"""
-    method: Param[str] = CNN_METHODS.LOGITS
+    method: Param[str] = field(default=CNN_METHODS.LOGITS, ignore_default=True)
     """Logits aggregation method"""
-    init_mean: Param[bool] = False
+    init_mean: Param[bool] = field(default=False, ignore_default=True)
     """Whether to initialize the kernel with mean pooling"""
 
     # Meta data -- on which LLM the model is trained
-    llm_name: Param[Optional[str]] = None
+    llm_name: Param[Optional[str]] = field(default=None, ignore_default=True)
     """name of LLM  used to extract the representations"""
 
     layer: Param[int]

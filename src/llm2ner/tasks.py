@@ -31,51 +31,51 @@ class LearnTokenMatching(Task):
     # model
     ner_model: Param[TokenMatchingNER]
     """Model to train"""
-    use_hookedtransformer: Param[bool] = False
+    use_hookedtransformer: Param[bool] = field(default=False, ignore_default=True)
     """If True, will use HookedTransformer to load the model, otherwise standard HF transformers"""
 
     # Loss params
-    pos_weight: Param[Optional[float]] = 0.0
+    pos_weight: Param[Optional[float]] = field(default=0.0, ignore_default=True)
     """Weight for the positive class in the BCE loss, 0 means Balanced BCE"""
-    dilate_entities: Param[Optional[List[int]]] = None
+    dilate_entities: Param[Optional[List[int]]] = field(default=None, ignore_default=True)
     """List of dilation values to use for the entity labels, None means no dilation"""
 
     # Training
-    epochs: Param[int] = 5
-    batch_size: Param[int] = 32
-    lr: Param[float] = 1e-2
-    patience: Param[int] = 3  # lr scheduler patience
-    min_lr: Param[float] = 5e-5
+    epochs: Param[int] = field(default=5, ignore_default=True)
+    batch_size: Param[int] = field(default=32, ignore_default=True)
+    lr: Param[float] = field(default=1e-2, ignore_default=True)
+    patience: Param[int] = field(default=3, ignore_default=True)  # lr scheduler patience
+    min_lr: Param[float] = field(default=5e-5, ignore_default=True)
     """Minimum learning rate for the scheduler"""
-    accumulation_steps: Param[int] = 2
-    grad_clip: Param[float] = 1.0
-    n_val: Param[int] = 3000  # number of steps between validation and logging
-    val_metric: Param[str] = "recall"  # metric to use for early stopping
+    accumulation_steps: Param[int] = field(default=2, ignore_default=True)
+    grad_clip: Param[float] = field(default=1.0, ignore_default=True)
+    n_val: Param[int] = field(default=3000, ignore_default=True)  # number of steps between validation and logging
+    val_metric: Param[str] = field(default="recall", ignore_default=True)  # metric to use for early stopping
     # Distillation
-    reset_student_weights: Param[bool] = False
+    reset_student_weights: Param[bool] = field(default=False, ignore_default=True)
     """if True, will reset the student weights to their initial values before each distillation phase"""
-    self_distillation_phases: Param[int] = 0
+    self_distillation_phases: Param[int] = field(default=0, ignore_default=True)
     """if > 0, will run distillation phases with the trained model as a teacher for itself"""
-    sparse_distill_loss: Param[bool] = True
+    sparse_distill_loss: Param[bool] = field(default=True, ignore_default=True)
     """if True, will use the sparse distillation loss, otherwise the dense one"""
-    teacher_thr_prob: Param[float] = 0.9
+    teacher_thr_prob: Param[float] = field(default=0.9, ignore_default=True)
     """Threshold probability for the teacher model in distillation phases."""
 
     # Data
     dataset_name: Param[str]
-    val_limit: Meta[int] = 1000  # limit the validation set size, not a parameter
-    max_length: Param[int] = 2000
-    max_ent_length: Param[int] = 20
+    val_limit: Meta[int] = field(default=1000, ignore_default=True)  # limit the validation set size, not a parameter
+    max_length: Param[int] = field(default=2000, ignore_default=True)
+    max_ent_length: Param[int] = field(default=20, ignore_default=True)
 
     # Meta params, not used to compute signature
-    data_folder: Meta[str] = ""  # Folder where the data is stored, not a parameter
+    data_folder: Meta[str] = field(default="", ignore_default=True)  # Folder where the data is stored, not a parameter
     """Path to the data folder"""
     runpath: Meta[Path] = field(default_factory=PathGenerator("runs"))
     """Path to store tensorboard logs"""
     parameters_path: Meta[Path] = field(default_factory=PathGenerator("parameters.pth"))
     """Path to store the model parameters"""
     # Misc
-    run: Param[int] = 0  
+    run: Param[int] = field(default=0, ignore_default=True)  
     """Run number, used if we want to run the same task multiple times"""
     version: Constant[str] = "1.0" 
     """Version of this task: Can change if code has been updated and need to recompute"""
@@ -225,31 +225,31 @@ class LearnMHSAmodel(Task):
     """Model to train"""
 
     # Training
-    epochs: Param[int] = 5
-    batch_size: Param[int] = 32
-    lr: Param[float] = 1e-2
-    patience: Param[int] = 3  # lr scheduler patience
-    min_lr: Param[float] = 5e-5
+    epochs: Param[int] = field(default=5, ignore_default=True)
+    batch_size: Param[int] = field(default=32, ignore_default=True)
+    lr: Param[float] = field(default=1e-2, ignore_default=True)
+    patience: Param[int] = field(default=3, ignore_default=True)  # lr scheduler patience
+    min_lr: Param[float] = field(default=5e-5, ignore_default=True)
     """Minimum learning rate for the scheduler"""
-    accumulation_steps: Param[int] = 2
-    grad_clip: Param[float] = 1.0
-    n_val: Param[int] = 3000  # number of steps between validation and logging
-    val_metric: Param[str] = "recall"  # metric to use for early stopping
+    accumulation_steps: Param[int] = field(default=2, ignore_default=True)
+    grad_clip: Param[float] = field(default=1.0, ignore_default=True)
+    n_val: Param[int] = field(default=3000, ignore_default=True)  # number of steps between validation and logging
+    val_metric: Param[str] = field(default="recall", ignore_default=True)  # metric to use for early stopping
     # Distillation
-    self_distillation_phases: Param[int] = 0
+    self_distillation_phases: Param[int] = field(default=0, ignore_default=True)
     """if > 0, will run distillation phases with the trained model as a teacher for itself"""
-    reset_student_weights: Param[bool] = False
+    reset_student_weights: Param[bool] = field(default=False, ignore_default=True)
     """if True, will reset the student weights to their initial values before each distillation phase"""
-    sparse_distill_loss: Param[bool] = True
+    sparse_distill_loss: Param[bool] = field(default=True, ignore_default=True)
     """if True, will use the sparse distillation loss, otherwise the dense one"""
-    teacher_thr_prob: Param[float] = 0.9
+    teacher_thr_prob: Param[float] = field(default=0.9, ignore_default=True)
     """Threshold probability for the teacher model in distillation phases."""
 
     # Data
     dataset_name: Param[str]
-    val_limit: Meta[int] = 1000  # limit the validation set size, not a parameter
-    max_length: Param[int] = 2000
-    max_ent_length: Param[int] = 20
+    val_limit: Meta[int] = field(default=1000, ignore_default=True)  # limit the validation set size, not a parameter
+    max_length: Param[int] = field(default=2000, ignore_default=True)
+    max_ent_length: Param[int] = field(default=20, ignore_default=True)
 
     # Misc
     run: Param[int] = (
@@ -260,7 +260,7 @@ class LearnMHSAmodel(Task):
     )
 
     # Meta params, not used to compute signature
-    data_folder: Meta[str] = ""  # Folder where the data is stored, not a parameter
+    data_folder: Meta[str] = field(default="", ignore_default=True)  # Folder where the data is stored, not a parameter
     """Path to the data folder"""
     runpath: Meta[Path] = field(default_factory=PathGenerator("runs"))
     """Path to store tensorboard logs"""
@@ -401,10 +401,10 @@ class EvalModel(Task):
     ner_model: Param[AttentionCNN_NER]
     """Model to evaluate"""
 
-    eval_datasets: Param[List] = [None]
+    eval_datasets: Param[List] = field(default=[None], ignore_default=True)
     """List of datasets to evaluate on"""
 
-    data_folder: Meta[Path] = ""
+    data_folder: Meta[Path] = field(default="", ignore_default=True)
     """Path to the data folder"""
 
     version: Constant[str] = "1.1"
@@ -465,27 +465,27 @@ class LearnNERselfAttn(Task):
     model_name: Param[str]
     layer: Param[int]
     rank: Param[int]
-    mode: Param[str] = "last"  # mode for NER patterns, full, last or block
-    causal_mask: Param[bool] = True
-    mask_bos: Param[bool] = True
+    mode: Param[str] = field(default="last", ignore_default=True)  # mode for NER patterns, full, last or block
+    causal_mask: Param[bool] = field(default=True, ignore_default=True)
+    mask_bos: Param[bool] = field(default=True, ignore_default=True)
 
     # Training
-    epochs: Param[int] = 5
-    batch_size: Param[int] = 32
-    n_val: Param[int] = 100  # number of steps between validation and logging
-    lr: Param[float] = 1e-2
-    patience: Param[int] = 3  # lr scheduler patience
-    pos_weight: Param[float] = 1.0
-    dilate_entities: Param[List[int]] = [3]
-    accumulation_steps: Param[int] = 2
-    grad_clip: Param[float] = 1.0
-    val_metric: Param[str] = "recall"  # metric to use for early stopping
-    val_limit: Param[int] = 1000  # limit the validation set size
+    epochs: Param[int] = field(default=5, ignore_default=True)
+    batch_size: Param[int] = field(default=32, ignore_default=True)
+    n_val: Param[int] = field(default=100, ignore_default=True)  # number of steps between validation and logging
+    lr: Param[float] = field(default=1e-2, ignore_default=True)
+    patience: Param[int] = field(default=3, ignore_default=True)  # lr scheduler patience
+    pos_weight: Param[float] = field(default=1.0, ignore_default=True)
+    dilate_entities: Param[List[int]] = field(default=[3], ignore_default=True)
+    accumulation_steps: Param[int] = field(default=2, ignore_default=True)
+    grad_clip: Param[float] = field(default=1.0, ignore_default=True)
+    val_metric: Param[str] = field(default="recall", ignore_default=True)  # metric to use for early stopping
+    val_limit: Param[int] = field(default=1000, ignore_default=True)  # limit the validation set size
 
     # Data
     dataset_name: Param[str]
-    max_length: Param[int] = 200
-    max_ent_length: Param[int] = 20
+    max_length: Param[int] = field(default=200, ignore_default=True)
+    max_ent_length: Param[int] = field(default=20, ignore_default=True)
 
     # Misc
     run: Param[int] = (
@@ -496,7 +496,7 @@ class LearnNERselfAttn(Task):
     )
 
     # Meta params, not used to compute signature
-    data_folder: Meta[str] = ""  # Folder where the data is stored, not a parameter
+    data_folder: Meta[str] = field(default="", ignore_default=True)  # Folder where the data is stored, not a parameter
 
     def execute(self):
         """Called when this task is run"""
@@ -600,24 +600,24 @@ class Learn_AttentionCNN(Task):
     ner_model: Param[AttentionCNN_NER]
     """Model to train"""
     # Loss params
-    pos_weight: Param[float] = 1.0
-    lasso_reg: Param[float] = 0.0
-    dilate_entities: Param[List[int]] = [3]
+    pos_weight: Param[float] = field(default=1.0, ignore_default=True)
+    lasso_reg: Param[float] = field(default=0.0, ignore_default=True)
+    dilate_entities: Param[List[int]] = field(default=[3], ignore_default=True)
     # Training
-    epochs: Param[int] = 5
-    batch_size: Param[int] = 32
-    lr: Param[float] = 1e-2
-    patience: Param[int] = 3  # lr scheduler patience
-    accumulation_steps: Param[int] = 2
-    grad_clip: Param[float] = 1.0
-    n_val: Param[int] = 3000  # number of steps between validation and logging
-    val_metric: Param[str] = "recall"  # metric to use for early stopping
+    epochs: Param[int] = field(default=5, ignore_default=True)
+    batch_size: Param[int] = field(default=32, ignore_default=True)
+    lr: Param[float] = field(default=1e-2, ignore_default=True)
+    patience: Param[int] = field(default=3, ignore_default=True)  # lr scheduler patience
+    accumulation_steps: Param[int] = field(default=2, ignore_default=True)
+    grad_clip: Param[float] = field(default=1.0, ignore_default=True)
+    n_val: Param[int] = field(default=3000, ignore_default=True)  # number of steps between validation and logging
+    val_metric: Param[str] = field(default="recall", ignore_default=True)  # metric to use for early stopping
 
     # Data
     dataset_name: Param[str]
-    val_limit: Meta[int] = 1000  # limit the validation set size, not a parameter
-    max_length: Param[int] = 200
-    max_ent_length: Param[int] = 20
+    val_limit: Meta[int] = field(default=1000, ignore_default=True)  # limit the validation set size, not a parameter
+    max_length: Param[int] = field(default=200, ignore_default=True)
+    max_ent_length: Param[int] = field(default=20, ignore_default=True)
     # Misc
     run: Param[int] = (
         0  # Run number, used if we want to run the same task multiple times
@@ -627,7 +627,7 @@ class Learn_AttentionCNN(Task):
     )
 
     # Meta params, not used to compute signature
-    data_folder: Meta[str] = ""  # Folder where the data is stored, not a parameter
+    data_folder: Meta[str] = field(default="", ignore_default=True)  # Folder where the data is stored, not a parameter
     """Path to the data folder"""
     parameters_path: Meta[Path] = field(default_factory=PathGenerator("parameters.pth"))
     """Path to store the model parameters"""

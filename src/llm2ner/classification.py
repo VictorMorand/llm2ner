@@ -51,19 +51,19 @@ class NERCmodel(xpmTorchHubModule):
     layer: Param[Optional[int]]
     """Layer at which to extract representations, extracted from ner_model if None"""
     
-    method: Param[str] = "concat"
+    method: Param[str] = field(default="concat", ignore_default=True)
     """Method to use for span representation, either 'concat' or 'avg'"""
 
-    ent_type_prompt: Param[str] = "Entity type: '"
+    ent_type_prompt: Param[str] = field(default="Entity type: '", ignore_default=True)
     """Prompt to use for entity type classification, used to compute class representations in zero shot"""
 
-    embed_dim: Param[int] = 0
+    embed_dim: Param[int] = field(default=0, ignore_default=True)
     """Embedding dimension for the span representations, if 0, will use the model dimension"""
 
-    n_layers: Param[int] = 2
+    n_layers: Param[int] = field(default=2, ignore_default=True)
     """Number of layers in the span embedding MLP"""
 
-    bias: Param[bool] = True
+    bias: Param[bool] = field(default=True, ignore_default=True)
     """Whether to use bias in the linear layers of the model"""
 
     FN_CLASS_VAL = -1
@@ -1079,59 +1079,59 @@ class LearnSupervisedNER(Task):
     nerc_model: Param[NERCmodel]
     """NERC model to train"""
 
-    finetune_ner: Param[bool] = False
+    finetune_ner: Param[bool] = field(default=False, ignore_default=True)
     """whether to finetune the NER model along with the class embeddings"""
 
     # Evaluation
-    decoding_strategies: Param[List[str]] = ["threshold", "greedy"]
+    decoding_strategies: Param[List[str]] = field(default=["threshold", "greedy"], ignore_default=True)
     """decoding strategy to use for entity extraction when evaluating model, see llm2ner.decoders for details"""
 
-    eval_thresholds: Param[List[float]] = [0.5]
+    eval_thresholds: Param[List[float]] = field(default=[0.5], ignore_default=True)
     """thresholds to use for entity decoding when evaluating model"""
 
     # training
-    epochs: Param[int] = 4
-    batch_size: Param[int] = 16
-    optimizer: Param[str] = "AdamW"
+    epochs: Param[int] = field(default=4, ignore_default=True)
+    batch_size: Param[int] = field(default=16, ignore_default=True)
+    optimizer: Param[str] = field(default="AdamW", ignore_default=True)
     """optimizer to use for training, can be "Adam", "SGD", etc."""
-    lr: Param[float] = 1e-3
-    grad_clip: Param[float] = 0.0
+    lr: Param[float] = field(default=1e-3, ignore_default=True)
+    grad_clip: Param[float] = field(default=0.0, ignore_default=True)
     """gradient clipping value, if 0, no clipping"""
 
-    accumulation_steps: Param[int] = 1
+    accumulation_steps: Param[int] = field(default=1, ignore_default=True)
     """number of steps to accumulate gradients before updating weights"""
     
-    patience: Param[int] = 5
+    patience: Param[int] = field(default=5, ignore_default=True)
     """number of untolerable validations to wait before reducing learning rate"""
     
-    early_stopping: Param[bool] = False
+    early_stopping: Param[bool] = field(default=False, ignore_default=True)
     """whether to stop training if no improvement on validation set"""
 
-    min_lr: Param[float] = 1e-5
+    min_lr: Param[float] = field(default=1e-5, ignore_default=True)
     """minimum learning rate, if 0, no minimum learning rate"""
     
-    n_val: Param[int] = 1000
+    n_val: Param[int] = field(default=1000, ignore_default=True)
     """number of validation steps"""
 
-    val_limit: Param[int] = 1000  
+    val_limit: Param[int] = field(default=1000, ignore_default=True)  
     """limit the number of validation samples, if None, no limit"""
     
-    val_metric: Param[str] = "BCE"  # metric to use for validation,
+    val_metric: Param[str] = field(default="BCE", ignore_default=True)  # metric to use for validation,
     """metric to use for validation, default "micro" for Micro F1"""
     
-    w_decay: Param[float] = 1e-5 
+    w_decay: Param[float] = field(default=1e-5, ignore_default=True) 
     """weight decay for the optimizer, if 0, no weight decay"""
 
     # data
-    dataset_name: Param[str] = "CoNLL 2003"
+    dataset_name: Param[str] = field(default="CoNLL 2003", ignore_default=True)
 
-    max_length: Param[int] = 1200
+    max_length: Param[int] = field(default=1200, ignore_default=True)
     
-    max_ent_length: Param[int] = 20
+    max_ent_length: Param[int] = field(default=20, ignore_default=True)
     """maximum length of the input sequence, if None, no limit"""
 
     # Meta params, not used to compute signature
-    data_folder: Meta[str] = ""  # Folder where the data is stored, not a parameter
+    data_folder: Meta[str] = field(default="", ignore_default=True)  # Folder where the data is stored, not a parameter
     """Path to the data folder"""
 
     runpath: Meta[Path] = field(default_factory=PathGenerator("runs"))
@@ -1140,11 +1140,11 @@ class LearnSupervisedNER(Task):
     parameters_path: Meta[Path] = field(default_factory=PathGenerator("parameters.pth"))
     """Path to store the model parameters"""
     
-    result_path: Meta[Path] = DataPath("Eval.json")
+    result_path: Meta[Path] = field(default=DataPath("Eval.json"), ignore_default=True)
     """Path to store the evaluation results"""
 
     # Misc
-    run: Param[int] = 0
+    run: Param[int] = field(default=0, ignore_default=True)
     """Run number, used if we want to run the same task multiple times"""
 
     version: Constant[str] = "1.0"
@@ -1338,43 +1338,43 @@ class LearnZeroShotNER(Task):
         1.0  # weight for the positive class in the loss function, if 1.0, no weight
     )
     """weight for the positive class in the loss function, if 1.0, no weight"""
-    PL_threshold: Param[float] = 0.99  # threshold for pseudo labeling
+    PL_threshold: Param[float] = field(default=0.99, ignore_default=True)  # threshold for pseudo labeling
     """Probability threshold for pseudo labeling, if the logit score is higher than this value, we consider it as a pseudo label"""
 
     # training
-    epochs: Param[int] = 4
-    batch_size: Param[int] = 16
-    optimizer: Param[str] = "AdamW"
+    epochs: Param[int] = field(default=4, ignore_default=True)
+    batch_size: Param[int] = field(default=16, ignore_default=True)
+    optimizer: Param[str] = field(default="AdamW", ignore_default=True)
     """optimizer to use for training, can be "Adam", "SGD", etc."""
-    lr: Param[float] = 1e-3
-    grad_clip: Param[float] = 0.0
+    lr: Param[float] = field(default=1e-3, ignore_default=True)
+    grad_clip: Param[float] = field(default=0.0, ignore_default=True)
     """gradient clipping value, if 0, no clipping"""
-    accumulation_steps: Param[int] = 1
+    accumulation_steps: Param[int] = field(default=1, ignore_default=True)
     """number of steps to accumulate gradients before updating weights"""
-    patience: Param[int] = 5
+    patience: Param[int] = field(default=5, ignore_default=True)
     """number of untolerable validations to wait before reducing learning rate"""
-    min_lr: Param[float] = 1e-5
+    min_lr: Param[float] = field(default=1e-5, ignore_default=True)
     """minimum learning rate, if 0, no minimum learning rate"""
-    n_val: Param[int] = 1000
+    n_val: Param[int] = field(default=1000, ignore_default=True)
     """number of validation steps"""
 
     val_limit: Param[int] = (
         1000  # limit the number of validation samples, if None, no limit
     )
-    val_metric: Param[str] = "BCE"  # metric to use for validation,
+    val_metric: Param[str] = field(default="BCE", ignore_default=True)  # metric to use for validation,
     """metric to use for validation, default "micro" for Micro F1"""
     w_decay: Param[float] = (
         1e-5  # weight decay for the optimizer, if 0, no weight decay
     )
 
     # data
-    dataset_name: Param[str] = "Pile-NER"
-    max_length: Param[int] = 1200
-    max_ent_length: Param[int] = 20
+    dataset_name: Param[str] = field(default="Pile-NER", ignore_default=True)
+    max_length: Param[int] = field(default=1200, ignore_default=True)
+    max_ent_length: Param[int] = field(default=20, ignore_default=True)
     """maximum length of the input sequence, if None, no limit"""
 
     # Meta params, not used to compute signature
-    data_folder: Meta[str] = ""  # Folder where the data is stored, not a parameter
+    data_folder: Meta[str] = field(default="", ignore_default=True)  # Folder where the data is stored, not a parameter
     """Path to the data folder"""
     runpath: Meta[Path] = field(default_factory=PathGenerator("runs"))
     """Path to store tensorboard logs"""
@@ -1382,7 +1382,7 @@ class LearnZeroShotNER(Task):
     """Path to store the model parameters"""
 
     # Misc
-    run: Param[int] = 0
+    run: Param[int] = field(default=0, ignore_default=True)
     """Run number, used if we want to run the same task multiple times"""
     version: Constant[str] = "1.0"
     """Version of this task: Can change if code has been updated and need to recompute"""

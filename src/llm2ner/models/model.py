@@ -31,7 +31,7 @@ from transformers import AutoConfig
 from transformers.modeling_utils import PreTrainedModel
 
 # xpm and misc
-from experimaestro import Param, Task, Meta, Param, Constant, DataPath
+from experimaestro import field, Param, Task, Meta, Param, Constant, DataPath
 
 # Our code
 from xpm_torch import Module
@@ -409,7 +409,6 @@ class NERmodel(Module):
     A NER model is a custom pytorch model that processes given LLM representations to predict entities span probabilities.
     """
 
-    model_card_template: Constant[str] = CARD_TEMPLATE
     tags: Constant[List[str]] = ["torch", "experimaestro"]
     repo_url: Constant[str] = "https://github.com/VictorMorand/test-model"
     paper_url: Constant[str] = "https://arxiv.org/abs/???"
@@ -634,6 +633,24 @@ class NERmodel(Module):
     def get_ckpt_name(self):
         return f"{type(self).__name__}_{self.llm_name}_{self.layer}_{self.mode}"
 
+    def get_card_template(self):
+        return CARD_TEMPLATE
+
+    def generate_model_card(self, **kwargs):
+        """Generate a model card from the template using Jinja2"""
+        from jinja2 import Template
+        
+        # Get parameters from the configuration
+        if hasattr(self, "__config__"):
+            params = self.__config__.__xpm__.values.copy()
+        else:
+            params = self.__xpm__.values.copy()
+            
+        params.update(kwargs)
+        
+        template = Template(self.get_card_template())
+        return template.render(**params)
+
     @torch.no_grad()
     def evaluate(
         self,
@@ -801,13 +818,13 @@ class NERmodel(Module):
         eval_datasets: Param[List]
         """List of datasets to evaluate on"""
 
-        decoding_strategy: Param[str] = "threshold"
+        decoding_strategy: Param[str] = field(default="threshold", ignore_default=True)
         """Decoding strategy to use, default 'threshold'"""
 
-        threshold: Param[float] = 0.5
+        threshold: Param[float] = field(default=0.5, ignore_default=True)
         """Threshold to use for decoding strategy, default 0.5"""
 
-        write_inferences: Param[bool] = False
+        write_inferences: Param[bool] = field(default=False, ignore_default=True)
         """Whether to write inferences to file, default False"""
 
         data_folder: Meta[PathOutput]
@@ -816,7 +833,7 @@ class NERmodel(Module):
         version: Constant[str] = "1.4"
         """Version of the task, 1.3: adds max_length, max_ent_length 100->400"""
 
-        result_path: Meta[Path] = DataPath("Eval.json")
+        result_path: Meta[Path] = field(default=DataPath("Eval.json"), ignore_default=True)
 
         @torch.no_grad()
         def execute(self):

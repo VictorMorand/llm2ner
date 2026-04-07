@@ -8,7 +8,8 @@ from typing import (
 import torch, os, json, logging, shutil
 import torch.nn as nn
 from experimaestro.core.arguments import Meta
-from experimaestro import (
+from experimaestro import  (
+    field,
     Config,
     Task,
     LightweightTask,
@@ -244,13 +245,13 @@ if __name__ == "__main__":
         """Example xpmTorchHubModule implementation, now all saving and loading is taken care of under the hood"""
 
         ## Child parameters
-        input_dim: Param[int] = 100
+        input_dim: Param[int] = field(default=100, ignore_default=True)
         """Input dimension"""
 
-        hidden_dim: Param[int] = 200
+        hidden_dim: Param[int] = field(default=200, ignore_default=True)
         """Hidden dimension"""
 
-        output_dim: Param[int] = 10
+        output_dim: Param[int] = field(default=10, ignore_default=True)
         """Output dimension"""
 
         version: Constant[str] = "1.0"

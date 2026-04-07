@@ -26,6 +26,7 @@ from transformers import PreTrainedTokenizerBase
 
 # xpm and misc
 from experimaestro import (
+    field, 
     Param,
     Param,
     Constant,
@@ -53,7 +54,6 @@ class ToMMeR(NERmodel):
     For more information, see the related paper : https://arxiv.org/abs/2510.19410
     """
 
-    model_card_template: Constant[str] = CARD_TEMPLATE
     tags: Constant[List[str]] = ["torch", "transformers", "llm", "ner"]
     repo_url: Constant[str] = "https://github.com/VictorMorand/llm2ner"
     paper_url: Constant[str] = "https://arxiv.org/abs/2510.19410"
@@ -61,23 +61,23 @@ class ToMMeR(NERmodel):
     llm_name: Param[str]
     """Name or Id of LLM  used to extract the representations"""
 
-    layer: Param[int] = 0
+    layer: Param[int] = field(default=0, ignore_default=True)
     """List of layers to extract the query and key scores from"""
 
-    rank: Param[int] = 100
+    rank: Param[int] = field(default=100, ignore_default=True)
     """Rank of the Query / Keys projection"""
 
     ## attn config
-    causal_mask: Param[bool] = True
+    causal_mask: Param[bool] = field(default=True, ignore_default=True)
     """Whether to use a causal mask for the attention scores, default True"""
 
-    sliding_window: Param[int] = 0
+    sliding_window: Param[int] = field(default=0, ignore_default=True)
     """Normalization method for attn scores, default none, can be 'cosine', or 'log_sigmoid' """
 
-    use_cosine: Param[bool] = False
+    use_cosine: Param[bool] = field(default=False, ignore_default=True)
     """Whether to use cosine normalization for the attention scores, default False"""
 
-    normalize_scores: Param[str] = ""
+    normalize_scores: Param[str] = field(default="", ignore_default=True)
     """Normalization method for attn scores, default none, can be 'cosine', or 'log_sigmoid' """
 
     def __initialize__(self):
@@ -125,15 +125,38 @@ class ToMMeR(NERmodel):
         llm_name = self.llm_name.split("/")[-1]
         return f"ToMMeR-{llm_name}_L{self.layer}_R{self.rank}"
 
+    def get_card_template(self):
+        return CARD_TEMPLATE_FILE.read_text()
+
     def generate_model_card(self, **kwargs):
         # Merge model-specific variables with any additional kwargs
         # load all named parameters from the config
-        cfg_dict = self.__config__.__xpm__.values
-        cfg_dict['model_id'] = self.get_model_id()
-        cfg_dict['n_params'] = f"{self.count_parameters()/1e3:.1f}K"
+        if hasattr(self, "__config__"):
+            cfg_dict = self.__config__.__xpm__.values.copy()
+            n_params = f"{self.count_parameters()/1e3:.1f}K"
+        else:
+            cfg_dict = self.__xpm__.values.copy()
+            # If we are a config, instantiate to get parameters
+            instance = self.instance()
+            instance.initialize()
+            n_params = f"{instance.count_parameters()/1e3:.1f}K"
+
+        cfg_dict["model_id"] = self.get_model_id()
+        cfg_dict["n_params"] = n_params
 
         return super().generate_model_card(**cfg_dict | kwargs)
 
+    def hub_readme_sections(self):
+        """Returns the model card as a README section for HF Hub"""
+        from xpm_torch.module import ReadmeSection
+
+        return [
+            ReadmeSection(
+                key="description",
+                content=self.generate_model_card(),
+            )
+        ]
+    
     @torch.no_grad()
     def get_tags_heuristic(
         self,
