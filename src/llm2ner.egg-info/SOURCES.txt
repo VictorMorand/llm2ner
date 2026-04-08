@@ -29,3 +29,4 @@ src/llm2ner/models/mhsa.py
 src/llm2ner/models/model.py
 src/llm2ner/models/tommer.py
 tests/test_load_hf.py
+tests/test_xpm_loading.py

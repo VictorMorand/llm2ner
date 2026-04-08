@@ -1,15 +1,18 @@
-import os, time, torch, logging, gc, json
+import os
+import time
+import torch
+import logging
+import gc
+import json
 from pathlib import Path
 from tqdm import tqdm
-from jaxtyping import Float, Bool, Int
+from jaxtyping import Float, Int
 from typing import (
     List,
     Tuple,
     Callable,
-    Type,
     Union,
     Optional,
-    Dict,
     Any,
     overload,
 )
@@ -20,18 +23,13 @@ from torch.nn.utils import clip_grad_norm_
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard.writer import SummaryWriter
 from torch.utils.data import DataLoader
-from transformer_lens.loading_from_pretrained import (
-    convert_hf_model_config,
-    get_official_model_name,
-)
 
 # HF and Tlens
 from transformer_lens import HookedTransformer
-from transformers import AutoConfig
 from transformers.modeling_utils import PreTrainedModel
 
 # xpm and misc
-from experimaestro import field, Param, Task, Meta, Param, Constant, DataPath
+from experimaestro import field, Task, Meta, Param, Constant, DataPath
 
 # Our code
 from xpm_torch import Module
@@ -127,9 +125,9 @@ def count_perf(
     if type(b_targets[0]) == tuple:
         b_targets = [b_targets]
 
-    assert (
-        type(b_entities) == list and type(b_targets) == list
-    ), f"entities and targets should be lists, not {type(b_entities)} and {type(b_targets)}"
+    assert type(b_entities) == list and type(b_targets) == list, (
+        f"entities and targets should be lists, not {type(b_entities)} and {type(b_targets)}"
+    )
 
     total, true_pos, false_pos = 0, 0, 0
 
@@ -247,9 +245,9 @@ def train(
     """
     writer = SummaryWriter()  # will write to ./runs/ folder by default
 
-    #log working dir to tensorboard
+    # log working dir to tensorboard
     writer.add_text("workdir", os.getcwd(), 0)
-    
+
     batch_size = (
         train_loader.dataset.batch_size
     )  # batch size is stored in the dataset, loader batch size is 1
@@ -266,9 +264,9 @@ def train(
     best_val = torch.inf
 
     if train_step_fn is None:
-        assert hasattr(
-            module, "training_step"
-        ), "Module must have a training_step method or train_step_fn must be provided"
+        assert hasattr(module, "training_step"), (
+            "Module must have a training_step method or train_step_fn must be provided"
+        )
         train_step_fn: Callable = module.training_step  # type: ignore
 
     # move model to device if available
@@ -289,12 +287,10 @@ def train(
     else:
         prev_epoch, prev_samples = 0, 0
 
-
     i = 0
     loss = torch.tensor(0, dtype=torch.float32).to("cuda" if use_cuda else "cpu")
     for epoch in range(prev_epoch + 1, prev_epoch + epochs + 1):
         for batch in tqdm(train_loader, desc=f"Epoch {epoch}"):
-
             i += 1
             step = i * batch_size + prev_samples
 
@@ -308,7 +304,6 @@ def train(
                 raise e
 
             if i % accumulation_steps == 0:
-                
                 # final loss and backward pass
                 loss /= accumulation_steps
                 loss.backward()
@@ -316,7 +311,7 @@ def train(
                 if grad_clip > 0:
                     total_norm = clip_grad_norm_(module.parameters(), grad_clip)
                     writer.add_scalar("train/GradNorm", total_norm, step)
-                
+
                 optimizer.step()
                 optimizer.zero_grad()
 
@@ -362,7 +357,7 @@ def train(
             if optimizer.param_groups[0]["lr"] <= min_lr and early_stopping:
                 break
         if optimizer.param_groups[0]["lr"] <= min_lr and early_stopping:
-            logging.info(f"Minimum learning rate reached, stopping training")
+            logging.info("Minimum learning rate reached, stopping training")
             break
 
     if torch.cuda.is_available():
@@ -391,12 +386,12 @@ It outputs span probabilities for each token in the input text.
 For more details, see the [paper]({paper_url}) and the [repo]({repo_url}).
 
 usage
-First install the package: 
+First install the package:
 ```bash
 pip install git+{repo_url}.git
 ```
 
-```python 
+```python
 from llm2ner import NERmodel
 
 NERmodel.from_pretrained("{model_name}")
@@ -408,10 +403,6 @@ class NERmodel(Module):
     """Main interface for NER models, should be subclassed
     A NER model is a custom pytorch model that processes given LLM representations to predict entities span probabilities.
     """
-
-    tags: Constant[List[str]] = ["torch", "experimaestro"]
-    repo_url: Constant[str] = "https://github.com/VictorMorand/test-model"
-    paper_url: Constant[str] = "https://arxiv.org/abs/???"
 
     llm_name: Param[str]
     """name of the LLM that produced the representations this model is trained on"""
@@ -619,12 +610,12 @@ class NERmodel(Module):
             entities = []
             for b in range(b_size):
                 spans = llm2ner.decoders.decode(
-                    spans_probs[b:b+1],  # keep batch dim
+                    spans_probs[b : b + 1],  # keep batch dim
                     decoding_strategy=decoding_strategy,
                     threshold=threshold,
                 )
                 entities.append([(s.start, s.end) for s in spans])
-            
+
         if return_probs:
             return entities, spans_probs
         else:
@@ -639,15 +630,15 @@ class NERmodel(Module):
     def generate_model_card(self, **kwargs):
         """Generate a model card from the template using Jinja2"""
         from jinja2 import Template
-        
+
         # Get parameters from the configuration
         if hasattr(self, "__config__"):
             params = self.__config__.__xpm__.values.copy()
         else:
             params = self.__xpm__.values.copy()
-            
+
         params.update(kwargs)
-        
+
         template = Template(self.get_card_template())
         return template.render(**params)
 
@@ -690,9 +681,9 @@ class NERmodel(Module):
                 inference_path = Path(inference_path)
             inference_path.parent.mkdir(parents=True, exist_ok=True)
             logging.info(f"Will save inferences to {inference_path}...")
-            
+
             inferred_data = data.InferredDataset(
-                data_name=inference_path.stem, 
+                data_name=inference_path.stem,
                 decoding_strategy=decoding_strategy,
                 threshold=threshold,
                 data_folder=inference_path.parent,
@@ -704,7 +695,12 @@ class NERmodel(Module):
             ]  # list of list of Tuples (start, end) for each entity
 
             inputs = model.tokenizer(
-                texts, padding=True, padding_side="right", return_tensors="pt", return_offsets_mapping=True, truncation=True,
+                texts,
+                padding=True,
+                padding_side="right",
+                return_tensors="pt",
+                return_offsets_mapping=True,
+                truncation=True,
             )
             tokens = inputs["input_ids"].to(model.device)
             offsets = inputs.pop("offset_mapping")
@@ -721,18 +717,18 @@ class NERmodel(Module):
             )  # batch of list of entities
 
             if inference_path is not None:
-                inferred_data.samples += (
-                    data.InferredDataset.get_samples_from_outputs(
-                        batch, b_pred_entities, b_span_probs, offsets
-                    )
+                inferred_data.samples += data.InferredDataset.get_samples_from_outputs(
+                    batch, b_pred_entities, b_span_probs, offsets
                 )
             # use count_perf to compute metrics
             tp, fp, tot = count_perf(b_pred_entities, b_target_entities)
             true_pos += tp
-            false_pos += fp     
-            total += tot    # total number of labeled entities
+            false_pos += fp
+            total += tot  # total number of labeled entities
             n_tok = tokens.size(1)
-            total_spans += (b_span_probs > 0).sum().item()  # total number of predicted spans
+            total_spans += (
+                (b_span_probs > 0).sum().item()
+            )  # total number of predicted spans
 
         # compute metrics
         precision = true_pos / (true_pos + false_pos + EPS)
@@ -740,8 +736,8 @@ class NERmodel(Module):
         f1 = 2 * precision * recall / (precision + recall + EPS)
 
         metrics = {
-            "precision": precision, 
-            "recall": recall, 
+            "precision": precision,
+            "recall": recall,
             "f1": f1,
             "true_pos": true_pos,
             "false_pos": false_pos,
@@ -752,7 +748,7 @@ class NERmodel(Module):
         if inference_path is not None:
             inferred_data.to_json(inference_path)
             logging.info(f"Saved inferences to {inference_path}")
-            
+
         if verbose:
             logging.info(
                 f"Precision: {precision:.2f} % Recall: {recall:.2f} % F1: {f1:.2f} %"
@@ -762,9 +758,10 @@ class NERmodel(Module):
             return metrics
         else:
             return metrics[val_metric]
-    
+
     @torch.no_grad()
-    def save_inference(self,
+    def save_inference(
+        self,
         model,
         save_path,
         dataset,
@@ -833,7 +830,9 @@ class NERmodel(Module):
         version: Constant[str] = "1.4"
         """Version of the task, 1.3: adds max_length, max_ent_length 100->400"""
 
-        result_path: Meta[Path] = field(default=DataPath("Eval.json"), ignore_default=True)
+        result_path: Meta[Path] = field(
+            default=DataPath("Eval.json"), ignore_default=True
+        )
 
         @torch.no_grad()
         def execute(self):
@@ -843,14 +842,14 @@ class NERmodel(Module):
             logging.info(f"Loaded model {ner_model}")
 
             llm_name = ner_model.llm_name
-            
+
             # Load model
             logging.info(f"Loading llm {llm_name}...")
             model = utils.load_llm(
                 llm_name,
                 to_hookedtransformer=ner_model.need_hookedtransformer,
                 cut_to_layer=ner_model.layer,
-                ).eval()
+            ).eval()
 
             c_length = utils.get_model_max_length(llm_name)
 
@@ -860,7 +859,6 @@ class NERmodel(Module):
             data_path = self.data_folder.path
             assert data_path.exists(), f"Data folder {data_path} does not exist"
 
-                
             # Load datasets
             for dataset_name in self.eval_datasets:
                 logging.info(f"Loading {dataset_name}")
@@ -880,11 +878,11 @@ class NERmodel(Module):
                     inference_path = None
 
                 metrics[dataset_name] = ner_model.evaluate(
-                    eval_dataset.get_loader(batch_size=30), 
+                    eval_dataset.get_loader(batch_size=30),
                     decoding_strategy=self.decoding_strategy,
                     threshold=self.threshold,
                     inference_path=inference_path,
-                    verbose=True
+                    verbose=True,
                 )
                 metrics[dataset_name]["n_samples"] = len(eval_dataset)
                 logging.info(f" --> Metrics on {dataset_name}: {metrics[dataset_name]}")
@@ -900,4 +898,4 @@ class NERmodel(Module):
                     },
                     f,
                 )
-            logging.info(f"Results saved !")
+            logging.info("Results saved !")

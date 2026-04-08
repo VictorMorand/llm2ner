@@ -1,24 +1,20 @@
-import time, torch, logging, gc, json
-import numpy as np
+import torch
+import logging
+import gc
 from pathlib import Path
 from jaxtyping import Float, Bool, Int
 from typing import (
     List,
     Tuple,
-    Callable,
-    Type,
     Union,
     Optional,
-    Dict,
     Any,
-    overload,
 )  # , TypeVar
-from functools import lru_cache, partial
+from functools import partial
 
 # PyTorch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange
 
 # HF and Tlens
 from transformer_lens import HookedTransformer
@@ -26,14 +22,12 @@ from transformers import PreTrainedTokenizerBase
 
 # xpm and misc
 from experimaestro import (
-    field, 
+    field,
     Param,
-    Param,
-    Constant,
 )
 
 # Our code
-from llm2ner import utils, masks, heuristics
+from llm2ner import masks, heuristics
 import llm2ner.data as data
 from llm2ner.losses import balanced_BCE
 from llm2ner.models.model import *
@@ -47,6 +41,7 @@ from llm2ner.models.TokenMatching import (
 CARD_TEMPLATE_FILE = Path(__file__).parent / "ToMMeR.md"
 CARD_TEMPLATE = CARD_TEMPLATE_FILE.read_text()
 
+
 class ToMMeR(NERmodel):
     """ToMMer Model : Token Matching Mention Recognition
     ToMMeR is an attention based model for Entity Mention Recognition.
@@ -54,14 +49,17 @@ class ToMMeR(NERmodel):
     For more information, see the related paper : https://arxiv.org/abs/2510.19410
     """
 
-    tags: Constant[List[str]] = ["torch", "transformers", "llm", "ner"]
-    repo_url: Constant[str] = "https://github.com/VictorMorand/llm2ner"
-    paper_url: Constant[str] = "https://arxiv.org/abs/2510.19410"
+    # class attributes
+    tags = ["torch", "transformers", "llm", "ner"]
+    repo_url = "https://github.com/VictorMorand/llm2ner"
+    paper_url = "https://arxiv.org/abs/2510.19410"
 
-    llm_name: Param[str]
+    # Experimaestro Parameters
+
+    llm_name: Param[str] = field(overrides=True)
     """Name or Id of LLM  used to extract the representations"""
 
-    layer: Param[int] = field(default=0, ignore_default=True)
+    layer: Param[int] = field(default=0, ignore_default=True, overrides=True)
     """List of layers to extract the query and key scores from"""
 
     rank: Param[int] = field(default=100, ignore_default=True)
@@ -81,16 +79,16 @@ class ToMMeR(NERmodel):
     """Normalization method for attn scores, default none, can be 'cosine', or 'log_sigmoid' """
 
     def __initialize__(self):
-        assert (
-            self.llm_name is not None
-        ), f"llm_name should be set to the name of the model used to extract the representations"
+        assert self.llm_name is not None, (
+            "llm_name should be set to the name of the model used to extract the representations"
+        )
         assert self.rank > 0, f"rank should be > 0, got {self.rank}"
-        assert (
-            self.sliding_window >= 0
-        ), f"sliding_window should be >= 0, got {self.sliding_window}"
-        assert (
-            self.layer is not None
-        ), f"layer should be set to the layers of the model used to extract the representations"
+        assert self.sliding_window >= 0, (
+            f"sliding_window should be >= 0, got {self.sliding_window}"
+        )
+        assert self.layer is not None, (
+            "layer should be set to the layers of the model used to extract the representations"
+        )
 
         super().__initialize__()
 
@@ -133,16 +131,18 @@ class ToMMeR(NERmodel):
         # load all named parameters from the config
         if hasattr(self, "__config__"):
             cfg_dict = self.__config__.__xpm__.values.copy()
-            n_params = f"{self.count_parameters()/1e3:.1f}K"
+            n_params = f"{self.count_parameters() / 1e3:.1f}K"
         else:
             cfg_dict = self.__xpm__.values.copy()
             # If we are a config, instantiate to get parameters
             instance = self.instance()
             instance.initialize()
-            n_params = f"{instance.count_parameters()/1e3:.1f}K"
+            n_params = f"{instance.count_parameters() / 1e3:.1f}K"
 
         cfg_dict["model_id"] = self.get_model_id()
         cfg_dict["n_params"] = n_params
+        cfg_dict["repo_url"] = self.repo_url
+        cfg_dict["paper_url"] = self.paper_url
 
         return super().generate_model_card(**cfg_dict | kwargs)
 
@@ -150,13 +150,15 @@ class ToMMeR(NERmodel):
         """Returns the model card as a README section for HF Hub"""
         from xpm_torch.module import ReadmeSection
 
+        eval_par = getattr(self, "eval_par", "")
+
         return [
             ReadmeSection(
                 key="description",
-                content=self.generate_model_card(),
+                content=self.generate_model_card(eval_par=eval_par),
             )
         ]
-    
+
     @torch.no_grad()
     def get_tags_heuristic(
         self,
@@ -222,7 +224,7 @@ class ToMMeR(NERmodel):
             causal=self.causal_mask,
             mask_bos=self.mask_bos,
             sliding_window=self.sliding_window,
-            device=self.device
+            device=self.device,
         ).squeeze(1)
 
     def attn_forward(
@@ -326,7 +328,9 @@ class ToMMeR(NERmodel):
             loss: loss for the token matching method
         """
         tags = batch["token_tags"].float().to(self.device)
-        attn_patterns = batch["pattern"].to(self.device)  # tensor shape (batch, seq, seq)
+        attn_patterns = batch["pattern"].to(
+            self.device
+        )  # tensor shape (batch, seq, seq)
         end_ent = batch["end_ent"].to(self.device)
         tokenizer: PreTrainedTokenizerBase = model.tokenizer  # type: ignore
         b_size = attn_patterns.size(0)
@@ -436,7 +440,7 @@ class ToMMeR(NERmodel):
             scores, end_ent, b_mask
         )  # shape (batch, seq, seq)
 
-        if not return_logits :
+        if not return_logits:
             # return probabilities
             span_logits = F.sigmoid(span_logits)
             span_logits.masked_fill_(~b_mask, 0)
@@ -545,9 +549,9 @@ class ToMMeR(NERmodel):
 
         ## Setup masking and loss
         if dilate_entities is not None:
-            assert (
-                type(dilate_entities) == list
-            ), f"dilate_entities should be a list of ints, got {type(dilate_entities)}"
+            assert type(dilate_entities) == list, (
+                f"dilate_entities should be a list of ints, got {type(dilate_entities)}"
+            )
             if dilate_entities == []:
                 dilate_entities = None
 
@@ -555,9 +559,9 @@ class ToMMeR(NERmodel):
         self.pos_weight = pos_weight
 
         if PL_threshold != 1:
-            assert (
-                PL_threshold > 0 and PL_threshold < 1
-            ), f"Pseudo-label threshold should be a probability in [0, 1], got {PL_threshold}"
+            assert PL_threshold > 0 and PL_threshold < 1, (
+                f"Pseudo-label threshold should be a probability in [0, 1], got {PL_threshold}"
+            )
             self.PL_threshold = torch.tensor(PL_threshold).logit()
         else:
             self.PL_threshold = None

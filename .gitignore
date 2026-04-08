@@ -13,3 +13,5 @@ datasets/
 annot_data/
 plots/
 runs/
+local/
+GEMINI.md

@@ -1,9 +1,19 @@
 [project]
 name = "llm2ner"
 version = "0.2.0"
+authors = [
+  { name="Victor Morand", email="morand@isir.upmc.fr" },
+]
 description = "Codebase for using and training ToMMer models : Token Matching Entity Recognition"
 readme = "README.md"
-requires-python = ">=3.10,!=3.11"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "Apache-2.0"
+license-files = ["LICENSE*"]
+
 dependencies = [
     "circuitsvis>=1.43.3",
     "einops>=0.8.1",
@@ -20,6 +30,10 @@ dependencies = [
     "transformer-lens>=2.15.0",
     "xpm-torch",
 ]
+
+[project.urls]
+Homepage = "https://github.com/VictorMorand/llm2ner"
+Issues = "https://github.com/VictorMorand/llm2ner/issues"
 
 [tool.uv]
 package = true
@@ -43,7 +57,22 @@ members = [
 
 [dependency-groups]
 dev = [
+    "docutils>=0.21.2",
     "llm2ner",
     "openai>=2.6.0",
+    "pre-commit>=4.0.0",
+    "pytest>=9.0.2",
     "rotary-embedding-torch>=0.8.9",
+    "ruff>=0.15.7",
+]
+test = [
+    "pytest>=8",
+    {include-group = "docs"},
+]
+docs = [
+    "experimaestro>=2.3",
+    "sphinx>=6",
+    "sphinx-codeautolink>=0.15",
+    "sphinx-rtd-theme>=3",
+    "sphobjinv>=2.3",
 ]
