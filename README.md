@@ -23,46 +23,51 @@
 <img src="Assets/AbstractFig.png" alt="ToMMeR Architecture" width="600"/>
 </div>
 
-ToMMeR is a lightweight probing model extracting emergent mention detection capabilities from early layers representations of any LLM backbone, achieving high Zero Shot recall across a wide set of 13 NER benchmarks.
 
 
 ### Abstract
 > _Identifying which text spans refer to entities -  mention detection - is both foundational for information extraction and a known performance bottleneck. We introduce ToMMeR, a lightweight model (<300K parameters) probing mention detection capabilities from early LLM layers. Across 13 NER benchmarks, ToMMeR achieves 93\% recall zero-shot, with over 90\% precision using an LLM as a judge showing that ToMMeR rarely produces spurious predictions despite high recall. Cross-model analysis reveals that diverse architectures (14M-15B parameters) converge on similar mention boundaries (DICE >75\%), confirming that mention detection emerges naturally from language modeling.  When extended with span classification heads, ToMMeR achieves near SOTA NER performance (80-87\% F1 on standard benchmarks). Our work provides evidence that structured entity representations exist in early transformer layers and can be efficiently recovered with minimal parameters._
+
+
+**TL-DR** - ToMMeR is a lightweight (computaionally ) probing model extracting emergent mention detection capabilities from early layers representations of *any* LLM backbone you plug it into. It achieves high Zero Shot recall across a wide set of NER benchmarks with controlled precision over 90%( human calibrated LLM-judge)
+
+- We release some Trained models are available on HugginFace: 🤗 https://huggingface.co/llm2ner/models
+    - You can train your own model on any backbone using this repository.
+- See the demo notebook [`ToMMeR_Demo.ipynb`](./Notebooks/ToMMeR_Demo.ipynb)
+[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/VictorMorand/llm2ner/blob/main/Notebooks/ToMMeR_Demo.ipynb)
+
+# Usage
+
 
 ## Installation
 
 ### Using Pip
 
 ```bash
-uv pip install -e git+https://github.com/VictorMorand/llm2ner.git
+uv pip install git+https://github.com/VictorMorand/llm2ner.git
 ```
 
 
-### Local install for Dev 
+### Local install for Dev
 
-#### Using `uv`
-
-We suggest using [uv](https://docs.astral.sh/uv/), a super fast package manager.
+We suggest using [uv](https://docs.astral.sh/uv/), a super efficient env/workpace manager.
 The following commands will clone the repo and install it within a new ready-to-use `.venv` with all dependencies in a few minutes.
 
 ```bash
 git clone https://github.com/VictorMorand/llm2ner.git
-cd llm2ner
-uv sync
+cd llm2ner && uv sync
 ```
 
-## Usage
-
-- All trained models are available on HugginFace: 🤗 https://huggingface.co/llm2ner/models 
-- See the demo notebook [`ToMMeR_Demo.ipynb`](./Notebooks/ToMMeR_Demo.ipynb)
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/VictorMorand/llm2ner/blob/main/Notebooks/ToMMeR_Demo.ipynb)
 
 ### Raw inference
+Here is an example
 ```py
+from xpm_torch.huggingface import TorchHFHub
+from llm2ner import ToMMeR, utils, plotting
 
-tommer = ToMMeR.from_pretrained("llm2ner/ToMMeR-Llama-3.2-1B_L3_R64")
+tommer: ToMMeR = TorchHFHub.from_pretrained("llm2ner/ToMMeR-Llama-3.1-8B_L5_R64")
 # load Backbone llm, optionnally cut the unused layer to save GPU space.
-llm = llm2ner.utils.load_llm( tommer.llm_name, cut_to_layer=tommer.layer,) 
+llm = utils.load_llm( tommer.llm_name, cut_to_layer=tommer.layer,)
 tommer.to(llm.device)
 
 #### Raw Inference
@@ -88,18 +93,19 @@ print(f"Predicted entities: {str_entities}")
 ### HTML output
 We also provide plotting options, outputting html for fancy notebook / web app display.
 ```py
-import llm2ner
-from llm2ner import ToMMeR
+from xpm_torch.huggingface import TorchHFHub
+from llm2ner import ToMMeR, utils, plotting
 
-tommer = ToMMeR.from_pretrained("llm2ner/ToMMeR-Llama-3.2-1B_L3_R64")
+tommer: ToMMeR = TorchHFHub.from_pretrained("llm2ner/ToMMeR-Llama-3.1-8B_L5_R64")
+
 # load Backbone llm, optionnally cut the unused layer to save GPU space.
-llm = llm2ner.utils.load_llm( tommer.llm_name, cut_to_layer=tommer.layer,) 
+llm = utils.load_llm( tommer.llm_name, cut_to_layer=tommer.layer,)
 tommer.to(llm.device)
 
 text = "Large language models are awesome. While trained on language modeling, they exhibit emergent Zero Shot abilities that make them suitable for a wide range of tasks, including Named Entity Recognition (NER). "
 
 #fancy interactive output
-outputs = llm2ner.plotting.demo_inference( text, tommer, llm,
+outputs = plotting.demo_inference( text, tommer, llm,
     decoding_strategy="threshold",  # or "greedy" for flat segmentation
     threshold=0.5, # default 50%
     show_attn=True,
@@ -127,12 +133,12 @@ We depend on several key packages:
 If you find this work useful, please cite the associated paper:
 ```yaml
 @misc{morand2025tommerefficiententity,
-      title={ToMMeR -- Efficient Entity Mention Detection from Large Language Models}, 
+      title={ToMMeR -- Efficient Entity Mention Detection from Large Language Models},
       author={Victor Morand and Nadi Tomeh and Josiane Mothe and Benjamin Piwowarski},
       year={2025},
       eprint={2510.19410},
       archivePrefix={arXiv},
       primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2510.19410}, 
+      url={https://arxiv.org/abs/2510.19410},
 }
 ```
