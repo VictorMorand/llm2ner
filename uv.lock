@@ -16,12 +16,6 @@ resolution-markers = [
     "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
-[manifest]
-members = [
-    "llm2ner",
-    "xpm-torch",
-]
-
 [[package]]
 name = "absl-py"
 version = "2.4.0"
@@ -2596,7 +2590,7 @@ requires-dist = [
     { name = "spacy" },
     { name = "tensorboard", specifier = ">=2.20.0" },
     { name = "transformer-lens", specifier = ">=2.15.0" },
-    { name = "xpm-torch", editable = "xpm-torch" },
+    { name = "xpm-torch", git = "https://github.com/experimaestro/xpm-torch.git" },
 ]
 
 [package.metadata.requires-dev]
@@ -6903,7 +6897,7 @@ wheels = [
 [[package]]
 name = "xpm-torch"
 version = "0.1.0"
-source = { editable = "xpm-torch" }
+source = { git = "https://github.com/experimaestro/xpm-torch.git#55e5fcfd8b80ccadaf3ea840b10ced86a9451743" }
 dependencies = [
     { name = "experimaestro" },
     { name = "huggingface-hub" },
@@ -6912,72 +6906,6 @@ dependencies = [
     { name = "setuptools" },
     { name = "tensorboard" },
     { name = "torchdata" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "docutils", version = "0.21.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "docutils", version = "0.22.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
-    { name = "pytest" },
-    { name = "ruff" },
-    { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
-    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "sphobjinv" },
-]
-docs = [
-    { name = "experimaestro" },
-    { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
-    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "sphinx-codeautolink" },
-    { name = "sphinx-rtd-theme" },
-    { name = "sphobjinv" },
-]
-test = [
-    { name = "experimaestro" },
-    { name = "pytest" },
-    { name = "sphinx", version = "8.1.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
-    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
-    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
-    { name = "sphinx-codeautolink" },
-    { name = "sphinx-rtd-theme" },
-    { name = "sphobjinv" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "experimaestro", specifier = ">=2.3" },
-    { name = "huggingface-hub", specifier = ">0.17" },
-    { name = "lightning", specifier = ">=2.4" },
-    { name = "safetensors", specifier = ">=0.4" },
-    { name = "setuptools", specifier = "<82.0" },
-    { name = "tensorboard", specifier = ">=2.19.0" },
-    { name = "torchdata", specifier = ">=0.10" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "docutils", specifier = ">=0.21.2" },
-    { name = "pytest", specifier = ">=9.0.2" },
-    { name = "ruff", specifier = ">=0.15.7" },
-    { name = "sphinx", specifier = ">=8.1.3" },
-    { name = "sphobjinv", specifier = ">=2.4" },
-]
-docs = [
-    { name = "experimaestro", specifier = ">=2.3" },
-    { name = "sphinx", specifier = ">=6" },
-    { name = "sphinx-codeautolink", specifier = ">=0.15" },
-    { name = "sphinx-rtd-theme", specifier = ">=3" },
-    { name = "sphobjinv", specifier = ">=2.3" },
-]
-test = [
-    { name = "experimaestro", specifier = ">=2.3" },
-    { name = "pytest", specifier = ">=8" },
-    { name = "sphinx", specifier = ">=6" },
-    { name = "sphinx-codeautolink", specifier = ">=0.15" },
-    { name = "sphinx-rtd-theme", specifier = ">=3" },
-    { name = "sphobjinv", specifier = ">=2.3" },
 ]
 
 [[package]]

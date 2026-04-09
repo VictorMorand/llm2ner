@@ -3,10 +3,21 @@
 .vscode/
 .venv/
 venv/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# If you use setuptools/pip install -e .
+.eggs/
+
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+
+## local folders
 plots/
 checkpoints/
 datasets/

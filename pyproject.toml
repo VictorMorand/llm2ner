@@ -40,7 +40,7 @@ package = true
 
 [tool.uv.sources]
 llm2ner = { workspace = true }
-xpm-torch = { workspace = true }
+xpm-torch = { git = "https://github.com/experimaestro/xpm-torch.git" }
 
 [tool.setuptools]
 # ...
@@ -52,7 +52,6 @@ include-package-data = true
 [tool.uv.workspace]
 members = [
     ".",
-    "xpm-torch",
 ]
 
 [dependency-groups]
