@@ -189,7 +189,7 @@ def process_model(
             ner_model=ner_model,
             eval_datasets=cfg.nested_eval_datasets,
             data_folder=PathOutput.C(path=cfg.data_folder),
-            decoding_strategy=tag("threshold"),  
+            decoding_strategy=tag("threshold"),
             threshold=tag(cfg.eval_threshold),
             write_inferences=True,
         ).tag("name", "Nested")
@@ -231,7 +231,7 @@ def process_results(helper: ExperimentHelper, processedModels: List[ProcessedMod
                 f"Model {tagspath(processed_model.learner)} job path {processed_model.learner.jobpath} Not trained yet: skipping"
             )
             continue
-        
+
         ## save model
         print(f"\n\n# Processing model {tagspath(processed_model.learner)}\n")
         link_dir = model_dir / processed_model.id
@@ -252,7 +252,7 @@ def process_results(helper: ExperimentHelper, processedModels: List[ProcessedMod
         print(f"Model saved to :\n{save_dir}")
 
         ## process Gold evaluation results
-        
+
         print("Gold Evaluation results:")
         for i, eval in enumerate(processed_model.evals):
             # Process each raw evaluation and save results to csv in the model folder
@@ -262,9 +262,9 @@ def process_results(helper: ExperimentHelper, processedModels: List[ProcessedMod
                 logging.warning(f"skipping Eval path {eval_path} does not exist, for model {processed_model.id}")
                 continue
             results_df = process_eval(eval_path)
-            
+
             if len(processedModels) < 10: print(f"\n## Results for eval {eval_name}\n", results_df)
-            
+
             res_file = save_dir / f"{eval_name}.csv"
             with open(res_file, "w") as f:
                 f.write(results_df.to_csv(sep="\t"))
@@ -283,7 +283,7 @@ def process_results(helper: ExperimentHelper, processedModels: List[ProcessedMod
                 logging.info(f"Inference hardlinked to {inf_save_path.name}")
 
         # depr : we store al levals in p_model.evals
-        ## process LLM evaluation results, 
+        ## process LLM evaluation results,
         # for llmEval in processed_model.llm_evals:
         #     print(llmEval.__xpm__.job.dependencies)
         # print(f"Processing {len(processed_model.llm_evals)} LLM evals for model")
@@ -295,7 +295,7 @@ def process_results(helper: ExperimentHelper, processedModels: List[ProcessedMod
         #     llm_results_df = pd.concat(all_llm_results, ignore_index=True)
         #     llm_results_df = add_agg_metrics(llm_results_df)
         #     print("LLM Evaluation results:")
-            
+
         #     if len(processedModels) < 10: print(llm_results_df)
 
         #     # write results to csv
@@ -315,7 +315,11 @@ def process_results(helper: ExperimentHelper, processedModels: List[ProcessedMod
 
 
 def run(helper: ExperimentHelper, cfg: Configuration):
-
+    # get data folder from environment variable or config, with environment variable taking precedence
+    data_folder = os.environ.get("NER_DATA", cfg.data_folder)
+    if data_folder == "":
+        raise ValueError("Data folder not specified. Please set the NER_DATA environment variable or the data_folder field in the configuration.")
+    cfg.data_folder = data_folder
     # Build result directories
     llm_eval_folder = helper.xp.resultspath / "llm_annotations"
     runpath = helper.xp.resultspath / "runs"
@@ -437,12 +441,12 @@ def run(helper: ExperimentHelper, cfg: Configuration):
     print("Finished training and evaluating models: ")
     for processed_model in processedModels:
         print(f" - {processed_model.id} : {processed_model.learner.__identifier__()}")
-    
+
     ### Compare inferences if they exist
     inferences = {}
     for processed_model in processedModels:
         for inf_path in processed_model.inferences:
-            if inf_path.name not in inferences.keys(): 
+            if inf_path.name not in inferences.keys():
                 inferences[inf_path.name] = []
             inferences[inf_path.name].append(
                 {"model_id": processed_model.id, "path": str(inf_path)}
@@ -454,7 +458,7 @@ def run(helper: ExperimentHelper, cfg: Configuration):
     inf_df_file = helper.xp.resultspath / "inferences_summary.json"
     with open(inf_df_file, "w") as f:
         json.dump(inferences, f, indent=4)
-    
+
     for inf_name in inferences.keys():
         if len(inferences[inf_name]) < 2:
             print(f"Only one inference for {inf_name}, skipping comparison")
@@ -463,7 +467,7 @@ def run(helper: ExperimentHelper, cfg: Configuration):
             paths = [inf["path"] for inf in inferences[inf_name]]
 
             print(f"Comparing {len(paths)} inferences for {inf_name}...")
-            
+
             if len(paths) > 20:
                 print(f"Too many inferences to compare ({len(paths)}), only 20 allowed written df to filter and process in {inf_df_file}")
                 continue

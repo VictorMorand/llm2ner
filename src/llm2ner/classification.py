@@ -36,21 +36,20 @@ from llm2ner import utils
 from llm2ner.losses import balanced_BCE
 import llm2ner.data as data
 from llm2ner.models import NERmodel, train, EPS
-from llm2ner.xpmModel import xpmTorchHubModule
+from xpm_torch import Module
 
-
-class NERCmodel(xpmTorchHubModule):
+class NERCmodel(Module):
     """NER + clasification model, adds a classifier on top of the NER model"""
 
     ner_model: Param[NERmodel]
     """NER model to use for NER"""
-    
+
     llm_name: str
     """Name of the LLM used for NER, same as provided ner_model"""
-    
+
     layer: Param[Optional[int]]
     """Layer at which to extract representations, extracted from ner_model if None"""
-    
+
     method: Param[str] = field(default="concat", ignore_default=True)
     """Method to use for span representation, either 'concat' or 'avg'"""
 
@@ -83,7 +82,7 @@ class NERCmodel(xpmTorchHubModule):
 
     def extra_repr(self):
         return f"method: '{self.method}', layer: {self.layer}, embed_dim: {self.embed_dim}" + super().extra_repr()
-    
+
     def __post_init__(
         self,
     ):
@@ -100,7 +99,7 @@ class NERCmodel(xpmTorchHubModule):
         if self.embed_dim <= 0:
             self.embed_dim = self.model_dim
 
-        if self.layer is None: self.layer = self.ner_model.layer 
+        if self.layer is None: self.layer = self.ner_model.layer
 
         assert self.method in list(
             self.SPAN_METHODS
@@ -625,7 +624,7 @@ class NERCmodel(xpmTorchHubModule):
         # freeze ner model
         for param in self.ner_model.parameters():
             param.requires_grad = False
-        
+
         self.train_zero_shot = True  # use zero-shot classification during training
 
         logging.info(
@@ -653,7 +652,7 @@ class NERCmodel(xpmTorchHubModule):
             },
             **kwargs,
         )
-        
+
         del self.train_zero_shot
         del self.pos_weight
 
@@ -696,7 +695,7 @@ class NERCmodel(xpmTorchHubModule):
         )
         tokens = inputs["input_ids"].cuda()
         attention_mask = inputs["attention_mask"].cuda()
-        
+
         with torch.no_grad():  # we don't need gradients for the representations
             reps = utils.compute_to_layer(
                 model,
@@ -1100,33 +1099,33 @@ class LearnSupervisedNER(Task):
 
     accumulation_steps: Param[int] = field(default=1, ignore_default=True)
     """number of steps to accumulate gradients before updating weights"""
-    
+
     patience: Param[int] = field(default=5, ignore_default=True)
     """number of untolerable validations to wait before reducing learning rate"""
-    
+
     early_stopping: Param[bool] = field(default=False, ignore_default=True)
     """whether to stop training if no improvement on validation set"""
 
     min_lr: Param[float] = field(default=1e-5, ignore_default=True)
     """minimum learning rate, if 0, no minimum learning rate"""
-    
+
     n_val: Param[int] = field(default=1000, ignore_default=True)
     """number of validation steps"""
 
-    val_limit: Param[int] = field(default=1000, ignore_default=True)  
+    val_limit: Param[int] = field(default=1000, ignore_default=True)
     """limit the number of validation samples, if None, no limit"""
-    
+
     val_metric: Param[str] = field(default="BCE", ignore_default=True)  # metric to use for validation,
     """metric to use for validation, default "micro" for Micro F1"""
-    
-    w_decay: Param[float] = field(default=1e-5, ignore_default=True) 
+
+    w_decay: Param[float] = field(default=1e-5, ignore_default=True)
     """weight decay for the optimizer, if 0, no weight decay"""
 
     # data
     dataset_name: Param[str] = field(default="CoNLL 2003", ignore_default=True)
 
     max_length: Param[int] = field(default=1200, ignore_default=True)
-    
+
     max_ent_length: Param[int] = field(default=20, ignore_default=True)
     """maximum length of the input sequence, if None, no limit"""
 
@@ -1136,10 +1135,10 @@ class LearnSupervisedNER(Task):
 
     runpath: Meta[Path] = field(default_factory=PathGenerator("runs"))
     """Path to store tensorboard logs"""
-    
+
     parameters_path: Meta[Path] = field(default_factory=PathGenerator("parameters.pth"))
     """Path to store the model parameters"""
-    
+
     result_path: Meta[Path] = field(default=DataPath("Eval.json"), ignore_default=True)
     """Path to store the evaluation results"""
 
@@ -1188,12 +1187,12 @@ class LearnSupervisedNER(Task):
         # freeze LLM
         for param in model.parameters():
             param.requires_grad = False
-        
+
         nerModel:NERmodel = self.nerc_model.ner_model.to(model.device)
 
         for param in nerModel.parameters():
             param.requires_grad = True
-        
+
         hist = nerModel.train(
             train_loader,
             val_loader,
@@ -1264,7 +1263,7 @@ class LearnSupervisedNER(Task):
         # freeze LLM and NER model if not finetuning
         for module in [model, nerc_model.ner_model]:
             for param in module.parameters():
-                param.requires_grad = False       
+                param.requires_grad = False
 
         nerc_model.to(model.device)
 
@@ -1298,11 +1297,11 @@ class LearnSupervisedNER(Task):
                 logging.info(f"Evaluating model with strategy {strat} (thr={thr})...")
                 m, confusion_m = nerc_model.evaluate(
                     test_dataset.get_loader(batch_size=self.batch_size),
-                    decoding_strategy=strat, 
+                    decoding_strategy=strat,
                     threshold=thr,
-                    verbose=True, 
+                    verbose=True,
                     val_metric="all",
-                    confusion=True, 
+                    confusion=True,
                     zero_shot=False,
                 )
                 metrics[eval_id] = m | {"decoding_strategy": strat, "threshold": float(thr)}

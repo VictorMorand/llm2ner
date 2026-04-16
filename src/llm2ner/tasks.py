@@ -75,14 +75,14 @@ class LearnTokenMatching(Task):
     parameters_path: Meta[Path] = field(default_factory=PathGenerator("parameters.pth"))
     """Path to store the model parameters"""
     # Misc
-    run: Param[int] = field(default=0, ignore_default=True)  
+    run: Param[int] = field(default=0, ignore_default=True)
     """Run number, used if we want to run the same task multiple times"""
-    version: Constant[str] = "1.0" 
+    version: Constant[str] = "1.0"
     """Version of this task: Can change if code has been updated and need to recompute"""
 
     def task_outputs(self, dep):
         return dep(
-            TokenMatchingNER.Loader.C(model=self.ner_model, parameters=self.parameters_path)
+            self.ner_model.loader_config(self.parameters_path)
         )
 
     def execute(self):
@@ -95,12 +95,12 @@ class LearnTokenMatching(Task):
         logging.info(
             f"Loading llm {ner_model.llm_name} and dataset {self.dataset_name}..."
         )
-        
+
         c_length = utils.get_model_max_length(ner_model.llm_name)
         if self.max_length > c_length:
             logging.warning(f"max_length {self.max_length} is greater than the model's max length {c_length}, setting max_length to {c_length}")
             self.max_length = c_length
-        
+
         model = utils.load_llm(ner_model.llm_name, to_hookedtransformer=self.use_hookedtransformer, cut_to_layer=ner_model.layer).eval()
         logging.debug(f"Done ! {ner_model.llm_name} dimension is {ner_model.dim}")
 
@@ -145,7 +145,7 @@ class LearnTokenMatching(Task):
             n_val=self.n_val,
             val_metric=self.val_metric,
         )
-        
+
 
         # If self distillation is enabled, run it
         phase = 0
@@ -177,11 +177,11 @@ class LearnTokenMatching(Task):
                 patience=self.patience,
                 min_lr=self.min_lr,
                 early_stopping=True,
-                
+
                 teacher_thr_prob= self.teacher_thr_prob,
                 sparse=self.sparse_distill_loss,
             )
-            
+
 
         # save model
         torch.save(ner_model.state_dict(), self.parameters_path)
@@ -329,7 +329,7 @@ class LearnMHSAmodel(Task):
             save_name = f"model_phase_{phase}.pth"
             torch.save(ner_model.cpu().state_dict(), save_name)
             logging.info(f"Saved model parameters for phase {phase} to {save_name}")
-           
+
             logging.info(f"Distillation Phase {phase + 1}/{self.self_distillation_phases}")
             teacher_model = deepcopy(ner_model)
 
@@ -351,11 +351,11 @@ class LearnMHSAmodel(Task):
                 patience=self.patience,
                 min_lr=self.min_lr,
                 early_stopping=True,
-                
+
                 teacher_thr_prob= self.teacher_thr_prob,
                 sparse=self.sparse_distill_loss,
             )
-           
+
 
         # save last model and send to task output
         llm_label = ner_model.llm_name.split("/")[-1]
@@ -726,5 +726,3 @@ class Learn_AttentionCNN(Task):
         else:
             logging.warning("No test loader found, skipping metrics computation")
             return
-
-

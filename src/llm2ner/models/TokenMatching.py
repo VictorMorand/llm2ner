@@ -1148,10 +1148,10 @@ class TokenMatchingNER(NERmodel):
     There are many ways to model the problem, each method is detailed in the methods attribute
     """
 
-    llm_name: Param[str]
+    llm_name: Param[str] = field(overrides=True)
     """name of LLM  used to extract the representations"""
 
-    layer: Param[int] = field(default=0, ignore_default=True)
+    layer: Param[int] = field(default=0, ignore_default=True, overrides=True)
     """List of layers to extract the query and key scores from"""
 
     rank: Param[int] = field(default=100, ignore_default=True)
@@ -1273,8 +1273,8 @@ class TokenMatchingNER(NERmodel):
         else:
             raise ValueError(f"mode {self.mode} not implemented")
 
-    def get_QK_reps(self, 
-            tokens: Float[torch.Tensor, "batch seq"], 
+    def get_QK_reps(self,
+            tokens: Float[torch.Tensor, "batch seq"],
             model: Union[HookedTransformer, nn.Module],
             attn_mask: Optional[Float[torch.Tensor, "batch seq seq"]] = None,
             ) -> Tuple[
@@ -1771,7 +1771,7 @@ class TokenMatchingNER(NERmodel):
 
         if not return_logits and not self.apply_softmax:
             # return probabilities
-            span_logits = F.sigmoid(span_logits)  
+            span_logits = F.sigmoid(span_logits)
             span_logits.masked_fill_(~b_mask, 0)
         else:
             span_logits.masked_fill_(~b_mask, FILL_NEG_LOGITS)
@@ -1978,9 +1978,9 @@ class CLQK_NER(TokenMatchingNER):
         )  # shape (model_dim, rank * n_heads)
         self.classifier = ReprClassifier(self.model_dim)
 
-    def get_QK_reps(self, 
-                    tokens: torch.Tensor, 
-                    model: HookedTransformer, 
+    def get_QK_reps(self,
+                    tokens: torch.Tensor,
+                    model: HookedTransformer,
                     attn_mask: Optional[torch.Tensor] = None) -> Tuple[
         Float[torch.Tensor, "batch seq rank"],
         Float[torch.Tensor, "batch seq rank"],
@@ -2009,7 +2009,7 @@ class CLQK_NER(TokenMatchingNER):
             h=self.n_kv_heads,
             d=self.qk_dim,
         )
-        
+
         return (llm_q @ self.W_Q), (llm_k @ self.W_K), reps
 
     def training_step(
@@ -2030,7 +2030,7 @@ class CLQK_NER(TokenMatchingNER):
         )
         tokens = inputs["input_ids"].cuda()
         attn_mask = inputs["attention_mask"].cuda()
-        
+
         # get the query and key scores from the model with shape (len(layers), batch, seq, n_heads, dim_head)
         Q, K, reps = self.get_QK_reps(
             tokens, model, attn_mask=attn_mask
@@ -2086,7 +2086,7 @@ class AttentionLCNER(TokenMatchingNER):
         if self.dim is None:
             self.dim = self.get_llm_dim()
             logging.info(f"Found hidden dimension {self.dim} for {self.llm_name}")
-        
+
         self.model_dim = self.dim
         self.layer = max(self.layers)
 
@@ -2101,7 +2101,7 @@ class AttentionLCNER(TokenMatchingNER):
 
         # overrides parameters definition
         self.cl_attn = nn.Linear(len(self.layers) * self.n_heads, 1, bias=True)
-        
+
         self.classifier = ReprClassifier(self.model_dim)
 
         self.PL_threshold = None
@@ -2132,7 +2132,7 @@ class AttentionLCNER(TokenMatchingNER):
         attn_scores = rearrange(attn_scores, "b l h i j -> b i j (h l)")
         # filter nan values from attn scores
         attn_scores = torch.where(torch.isfinite(attn_scores), attn_scores, torch.zeros_like(attn_scores))
-        
+
         if self.normalize_scores in ["logits", "softmax"]:
             pass  # keep raw logits or already softmaxed values
         elif self.normalize_scores == "log_sigmoid":
@@ -2147,7 +2147,7 @@ class AttentionLCNER(TokenMatchingNER):
         output = self.cl_attn(attn_scores).squeeze(-1)
 
         if return_mask:
-            return output, b_mask 
+            return output, b_mask
         else:
             return output
 
@@ -2168,7 +2168,7 @@ class AttentionLCNER(TokenMatchingNER):
             span_scores: tensor (batch, seq seq) logits or probabilities for each span in the text
         """
         b, seq = tokens.size()
-       
+
         # get the attention scores from llms
         llm_attn_scores, reps = utils.get_attnScores_from_layers(
             layers=self.layers,
@@ -2187,7 +2187,7 @@ class AttentionLCNER(TokenMatchingNER):
             span_logits.masked_fill_(~b_mask, FILL_NEG_LOGITS)
         else:
             # return probabilities
-            span_logits = F.sigmoid(span_logits)  
+            span_logits = F.sigmoid(span_logits)
             span_logits.masked_fill_(~b_mask, 0)
 
         if return_mask:
@@ -2214,9 +2214,9 @@ class AttentionLCNER(TokenMatchingNER):
         )
         tokens = inputs["input_ids"].cuda()
         attn_mask = inputs["attention_mask"].cuda()
-        
+
         b, seq = tokens.size()
-        
+
         # get the attention scores from llms
         llm_attn_scores, reps = utils.get_attnScores_from_layers(
             layers=self.layers,
@@ -2319,7 +2319,7 @@ class AttentionCNN_NER(NERmodel):
         assert self.method in list(
             CNN_METHODS
         ), f"Aggregation method '{self.method}' not implemented, choose among: {', '.join(CNN_METHODS)}"
-        
+
         super().__initialize__()
 
         self.attn = SelfAttention(
