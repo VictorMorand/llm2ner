@@ -1,6 +1,8 @@
-import json, os, logging, time
+import json
+import os
+import logging
+import time
 from typing import List
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -8,18 +10,7 @@ from tqdm import tqdm
 import torch
 
 import llm2ner
-from llm2ner import utils
-from llm2ner.models.model import (
-    NERmodel,
-    count_perf,
-    count_perf_tags,
-)
-from llm2ner.models.TokenMatching import (
-    AttentionCNN_NER,
-    TokenMatchingNER,
-    CLQK_NER,
-)
-from experimaestro import Config, from_task_dir
+from experimaestro import Config
 from experimaestro.scheduler import JobState
 
 
@@ -51,13 +42,13 @@ def process_eval(eval_path: Path):
 def add_agg_metrics(results_df, ignore_datasets: List[str] = []):
     """Add aggregated metrics to a results dataframe which rows are datasets
     The aggregated metrics are the weighted average of the metrics by the number of samples"""
-    
+
     # separate ignored datasets
     if len(ignore_datasets):
         logging.info(f"Ignoring datasets: {ignore_datasets} for Mean and aggregation of metrics")
         ignored_df = results_df[results_df["dataset"].isin(ignore_datasets)]
         results_df = results_df[~results_df["dataset"].isin(ignore_datasets)]
-    
+
     # get total samples
     tot = results_df["n_samples"].sum()
 
@@ -67,7 +58,7 @@ def add_agg_metrics(results_df, ignore_datasets: List[str] = []):
 
     # compute weighted average of f1, precision, recall
     if "Aggregated" not in results_df["dataset"].values:
-        
+
         agg_row = {"dataset": "Aggregated", "n_samples": tot}
         for metric in ["precision", "recall"]:
             agg_row[metric] = (results_df[metric] * results_df["n_samples"] / tot).sum()
@@ -99,7 +90,7 @@ def add_agg_metrics(results_df, ignore_datasets: List[str] = []):
             if row["total_spans"] == 0 or row["total_spans"] is None:
                 return 0.0
             return row["total"] / row["total_spans"]
-        
+
         results_df["predicted_fraction"] = results_df.apply(compute_predicted_fraction, axis=1)
     else:
         logging.info(
@@ -527,4 +518,3 @@ def load_from_job(jobpath, verbose=False):
     # print(model)
 
     return model, model_cfg
-

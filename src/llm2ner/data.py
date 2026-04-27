@@ -1,4 +1,7 @@
-import torch, os, json
+import os
+import torch
+import json
+import logging
 from typing import List, Tuple, Union, Optional
 from dataclasses import dataclass, asdict
 from torch.utils.data import DataLoader
@@ -14,8 +17,9 @@ from enum import Enum
 import logging
 from transformers import AutoModel
 from transformers.modeling_utils import PreTrainedModel
-from transformer_lens.loading_from_pretrained import convert_hf_model_config, get_official_model_name
 from llm2ner.utils import to_str_tokens
+
+logger = logging.getLogger(__name__)
 
 ATTN_MODES = ["first", "last", "block", "block_only"]
 
@@ -357,7 +361,7 @@ class NERDataset:
         self.data = []  # list of items, populated by child classes
         self.max_ent_length = max_ent_length
         self.model = model
-        
+
         # TODO remove if we can just pass when model is not set.
         # for now we keep this to avoid breaking changes
         if self.model is not None:
@@ -369,18 +373,18 @@ class NERDataset:
             assert tokenizer is not None, "tokenizer must be set if no model provided"
             self.tokenizer = tokenizer
 
-        if max_length is not None:  
-            
+        if max_length is not None:
+
             self.max_length = max_length  # default to model max context length
 
         elif isinstance(model, HookedTransformer):
             self.max_length = model.cfg.n_ctx
-            logging.info(
+            logger.info(
                 f"max_length not specified, defaulting to model context length {self.max_length}"
             )
         else:
             self.max_length = 1024
-            logging.info(
+            logger.info(
                 f"max_length not specified, defaulting to {self.max_length}"
             )
 
@@ -398,19 +402,19 @@ class NERDataset:
         self.mode = mode
         # self.data = []  # list of items, populated by child classes
 
-    #getter for n_classes 
+    #getter for n_classes
     @property
     def n_classes(self):
         """Number of classes in the dataset"""
         return len(self.type2id)
-    
-    
+
+
     def __post_init__(self):
         """Post init function to be called after the class is initialized"""
-        
+
         assert type(self.data) is list, f"Data must be a list of items, got {type(self.data)}"
         assert type(self.data[0]) is dict, f"Data must be a list of dictionaries, got first item {self.data[0]}"
-        
+
         # sanity checks
         for key in [
             "text",
@@ -427,7 +431,7 @@ class NERDataset:
             if len(item["str_tokens"]) > self.max_length or len(item["entities"]) == 0: # type: ignore
                 self.data.remove(item)
         if (prev_len - len(self.data)) > 0:
-            logging.info(
+            logger.info(
                 f"Filtered {prev_len - len(self.data)} items with more than {self.max_length} tokens out of {prev_len} from dataset."
             )
 
@@ -448,7 +452,20 @@ class NERDataset:
     def get_loader(self, batch_size: int = 16):
         """Return a specific DataLoader for this dataset with batches sorted by text length and shuffled"""
         batched_dataset = BatchedDataset(self, batch_size=batch_size)
-        return DataLoader(batched_dataset, batch_size=1, collate_fn=lambda x: x[0])
+        # use num_workers for faster loading, but limit to 4 to avoid too many processes on small datasets
+
+        if os.name == "posix" and "darwin" in os.uname().sysname.lower():
+            num_workers = 0
+        else:
+            # if running on macOS with multiprocessing issues, set num_workers to 0
+            num_workers = min(int(os.environ.get("SLURM_CPUS_PER_TASK", 4)), 4)
+
+        return DataLoader(
+            batched_dataset,
+            batch_size=1,
+            collate_fn=lambda x: x[0],
+            num_workers=num_workers,
+        )
 
     def get_classes(self, return_counts: bool = False):
         """Get the classes of the dataset"""
@@ -492,16 +509,16 @@ class InferredDataset:
     class Sample:
         data_id: List[int]
         """Sample id in original dataset"""
-        
+
         text: str
         """Raw text"""
-        
+
         pred_entities: List[dict]
         """dict (name: str, pos: (start: int, end: int))"""
 
         gt_entities: List[dict]
         """dict (name: str, pos: (start: int, end: int))"""
-    
+
     # 🔹 Save dataset to JSON
     def to_json(self, filepath: str):
         """Save dataset to JSON file"""
@@ -523,17 +540,17 @@ class InferredDataset:
             data = json.load(f)
 
         dataset = cls(
-            data_name=data["data_name"], 
+            data_name=data["data_name"],
             decoding_strategy=data.get("decoding_strategy", "unknown"),
             threshold=data.get("threshold", -1),
             data_folder=data["data_folder"])
         for sample in data["samples"]:
             dataset.samples.append(cls.Sample(**sample))
         return dataset
-    
+
     def __getitem__(self, index):
         return self.samples[index]
-    
+
     def __iter__(self):
         return iter(self.samples)
 
@@ -548,7 +565,7 @@ class InferredDataset:
             self, batch, b_pred_entities, b_span_probs, offsets
             ) -> List["InferredDataset.Sample"]:
         """Creates a Sample from nerModel outputs for a given batch prediction"""
-        
+
         samples = []
         for i in range(len(batch["text"])):
             entities = b_pred_entities[i] # entities token ids
@@ -563,7 +580,7 @@ class InferredDataset:
                 c_start = offset[b][0].item()
                 c_end = offset[e][1].item()
                 # remove leading space
-                if text[c_start] == " ": c_start += 1  
+                if text[c_start] == " ": c_start += 1
                 ents.append({
                     "name": text[c_start:c_end],
                     "score": score,
@@ -594,7 +611,7 @@ def compare_inferences(inferences: List[InferredDataset]) -> dict:
     """
 
     if len(inferences) < 2:
-        print("Need at least two inferred datasets to compute IOU")
+        logger.info("Need at least two inferred datasets to compute IOU")
         return None
     if len(inferences) == 2:
         #extract entities as sets of (data_id, start, end) tuples
@@ -606,7 +623,7 @@ def compare_inferences(inferences: List[InferredDataset]) -> dict:
 
         iou = len(intersection) / len(union) if len(union) > 0 else 0.0
         dice = 2 * len(intersection) / (len(entitiesA) + len(entitiesB)) if (len(entitiesA) + len(entitiesB)) > 0 else 0.0
-        
+
         return {
             "iou": iou,
             "dice": dice,
@@ -615,7 +632,7 @@ def compare_inferences(inferences: List[InferredDataset]) -> dict:
             "n_intersection": len(intersection),
             "n_union": len(union),
         }
-    
+
     else:
         n = len(inferences)
         iou_matrix = np.zeros((n, n))
@@ -644,7 +661,7 @@ class JSONDataSet(NERDataset):
     def __init__(
         self,
         data: Union[str, Path, List],
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
         mode: str = PATTERN_MODES.FIRST,
         max_ent_length=None,
         max_length=None,
@@ -662,8 +679,8 @@ class JSONDataSet(NERDataset):
         """
         super().__init__(
             model=model,
-            mode=mode, 
-            max_ent_length=max_ent_length, 
+            mode=mode,
+            max_ent_length=max_ent_length,
             max_length=max_length,
             **kwargs
         )
@@ -700,9 +717,9 @@ class JSONDataSet(NERDataset):
         str_tokens = to_str_tokens(tokens, self.tokenizer)
         ner_tags = [0] * len(str_tokens)
 
-        # print(text)
-        # print("str_tokens", str_tokens)
-        # print("entities", entities)
+        # logger.info(text)
+        # logger.info("str_tokens", str_tokens)
+        # logger.info("entities", entities)
         for entity in entities:
             token_start, token_end = char_to_token_pos(*entity["pos"], offsets)
 
@@ -741,7 +758,7 @@ class CoNLLDataset(NERDataset):
     def __init__(
         self,
         CoNLLdata,
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
         mode: str = PATTERN_MODES.FIRST,
         max_ent_length=40,
         max_length=512,
@@ -777,13 +794,13 @@ class CoNLLDataset(NERDataset):
         item["text"] = " ".join(words)
 
         # filters
-        if all(np.unique(item["ner_tags"]) == [0] ):  
+        if all(np.unique(item["ner_tags"]) == [0] ):
             # if no entities in context
             return []
         else:
             return [item]
 
-    def tokenize_and_augment(self, model: HookedTransformer, verbose: bool = True):
+    def tokenize_and_augment(self, model: HookedTransformer | PreTrainedModel, verbose: bool = True):
         """Tokenize the texts and compute token-level NER tags from a CoNLL item
         Args:
             model: model that will be used, will use its tokenizer
@@ -891,7 +908,7 @@ def load_dataset_splits(
     dataset_name: str,
     data_folder: Union[Path, str],
     splits: Optional[List[str]] = None,
-    model: HookedTransformer = None,
+    model: HookedTransformer | PreTrainedModel = None,
     tokenizer = None,
     mode: str = PATTERN_MODES.FIRST,
     max_ent_length = None,
@@ -937,7 +954,7 @@ def load_dataset_splits(
 
             if splits is None:
                 splits = av_splits
-                print(f"Found {len(splits)} files in {folder}: {splits}")
+                logger.info(f"Found {len(splits)} files in {folder}: {splits}")
             else:
                 # check if splits are in available splits
                 for split in splits:
@@ -945,7 +962,7 @@ def load_dataset_splits(
                         raise ValueError(
                             f"Split {split} not found in {folder}, available splits are {av_splits}"
                         )
-                # print(f"Found {splits} files in {folder}")
+                # logger.info(f"Found {splits} files in {folder}")
 
             # filter splits to load
             splits = [split for split in splits if split in splits_to_load]
@@ -957,7 +974,7 @@ def load_dataset_splits(
 
             data = {}
             for split in splits:
-                print(f"Loading {split} dataset from {folder / f'{split}.json'}")
+                logger.info(f"Loading {split} dataset from {folder / f'{split}.json'}")
                 data.update(
                     {
                         split: JSONDataSet(
@@ -977,7 +994,7 @@ def load_dataset_splits(
 
             if len(data.keys()) == 1 and val_limit is not None:
                 # if only one split, we add a train and dev split
-                print(
+                logger.info(
                     f"Got only train set of len {len(data['train'])}, splitting into train and dev ({val_limit})"
                 )
                 # if only one split, we add a train and dev split
@@ -1051,7 +1068,7 @@ def harmonize_classes(datasets: List[NERDataset]):
         [dataset.id2type for dataset in datasets],
     )
 
-    
+
     for dataset in datasets[:]:
         for item in dataset.data:
             for ent in item["entities"]:
@@ -1082,7 +1099,7 @@ def fuse_datasets(datasets: List[NERDataset], verbose:bool=False) -> NERDataset:
         [dataset.type2id for dataset in datasets],
         [dataset.id2type for dataset in datasets],
     )
-    
+
     data = []
     for dataset in datasets:
         assert dataset.model == model, "All datasets must use the same model"
@@ -1099,14 +1116,14 @@ def fuse_datasets(datasets: List[NERDataset], verbose:bool=False) -> NERDataset:
     fused_dataset.type2id = type2id
     fused_dataset.id2type = id2type
     if verbose:
-        print(f"Fused dataset of len {len(fused_dataset)}, Harmonized classes: {fused_dataset.get_classes()}")
-    
+        logger.info(f"Fused dataset of len {len(fused_dataset)}, Harmonized classes: {fused_dataset.get_classes()}")
+
     return fused_dataset
 
 
 def load_all_splits(dataset_name: str,
     data_folder: Union[Path, str],
-    model: HookedTransformer,
+    model: HookedTransformer | PreTrainedModel,
     mode: str = PATTERN_MODES.FIRST,
     max_ent_length=None,
     max_length=None,

@@ -1,7 +1,5 @@
-import random, torch
-from llm2ner.models.model import NERmodel
+import random
 from llm2ner.data import InferredDataset
-from llm2ner.utils import load_llm
 from openai import OpenAI
 from tqdm import tqdm
 import logging
@@ -11,7 +9,7 @@ SYSTEM = \
 """
 You are an expert in entity mention annotation.
 A mention is defined as : "something that exists as itself. It does not need to be of material existence."
-In particular, abstractions and legal fictions are usually regarded as entities. 
+In particular, abstractions and legal fictions are usually regarded as entities.
 In general, there is also no presumption that an entity is animate, or present. It may refer to animals; natural features such as mountains; inanimate objects such as tables; numbers or sets as symbols written on a paper; human contrivances such as laws, corporations and academic disciplines; or supernatural beings such as gods and spirits."
 
 ## Instructions
@@ -32,7 +30,7 @@ def format_context(ent:dict, text, n_ctx=30):
     if e + n_ctx >= len(text):
         next_ctx = text[e:len(text)]
     else:
-        next_ctx = text[e:e+n_ctx] + "..."    
+        next_ctx = text[e:e+n_ctx] + "..."
     return prev_ctx + f"[[{ent['name']}]]" + next_ctx
 
 def parse_answer(text):
@@ -43,9 +41,9 @@ def parse_answer(text):
         return False
     else:
         return None
-    
+
 def generate_random_predictions(item, n_preds=5) -> list:
-    
+
     rand_entities = []
 
     for _ in range(n_preds):
@@ -63,14 +61,14 @@ def infer_from_LM_chat(data, inf_limit:int, client, model:str = OAI_MODEL):
     n_req = 0
 
     judged_dataset = InferredDataset(
-        data_name=data.data_name, 
+        data_name=data.data_name,
         decoding_strategy=data.decoding_strategy,
         threshold=data.threshold,
         data_folder=data.data_folder)
 
     pbar = tqdm(total=inf_limit, desc="Inference requests")
-    
-    try : 
+
+    try :
         for sample in data:
             # Stop if we reached the inference limit (but finish sample)
             if n_req >= inf_limit:
@@ -85,7 +83,7 @@ def infer_from_LM_chat(data, inf_limit:int, client, model:str = OAI_MODEL):
                     {"role": "system", "content": SYSTEM},
                     {"role": "user", "content": PROMPT.format(context=context)}
                 ]
-                
+
                 resp = client.chat.completions.create(
                     model="gpt-4.1-mini",
                     messages=message,
@@ -98,7 +96,7 @@ def infer_from_LM_chat(data, inf_limit:int, client, model:str = OAI_MODEL):
                 # logging.info(f"{context}, -> {verdict}")
                 ent['judged_as_entity'] = verdict
                 ent['judge_response'] = resp
-            
+
             judged_dataset.samples.append(sample)
     except Exception as e:
         logging.info(f"Error during inference: {e}, returning partial results")
@@ -114,18 +112,18 @@ if __name__ == "__main__":
 
     inf_limit = 10000  # max number of inference requests to the LLM
     assert os.environ.get("OPENAI_API_KEY") is not None, "Please set OPENAI_API_KEY environment variable"
-    
+
     # data_path = "/home/morand/experiments/llminterp/jobs/llm2ner.models.model.nermodel.eval/a8537a2d4954476a3f7597de42c5ce7c496ae4c32a0d387f739020a048069363/inferences_ACE 2005_threshold_thr0.5.json"
-    
+
     # 92bf3cebce4887dabb0d77f09f6d2a79c47f6e40f0e7cc36c9af5e50fcc14bc1 = best F1 llama 1B at layer 6
     data_path = "/home/morand/experiments/llminterp/jobs/llm2ner.tasks.learntokenmatching/92bf3cebce4887dabb0d77f09f6d2a79c47f6e40f0e7cc36c9af5e50fcc14bc1/model/inferences_GENIA_NER_threshold_thr0.5.json"
-    
-    
+
+
     # Best recall model on MultiNERD test set
     # ~ 100K entities.
     # Will Cost 15$ to annotate them with gpt4.1-mini
     data_path = "/home/morand/experiments/llminterp/jobs/llm2ner.tasks.learntokenmatching/c130a1db02fe3aeb418c87aef5381e3b960fd5259ea8e5bf7af70de91888b5a6/model/inferences_MultiNERD_dev_threshold_0.5.json"
-    
+
     # Best Recall Model on GENIA dev set
     # 31606 entities with (16.7 % precision)
     # Will Cost 4.74$ to annotate them with gpt4.1-mini
@@ -133,13 +131,13 @@ if __name__ == "__main__":
 
     data = InferredDataset.from_json(data_path)
     print(f"Loaded data from {data_path}, with {len(data)} samples")
-    
+
     save_path = data_path.replace(".json", f"_judged_{OAI_MODEL}_lim{inf_limit}.json")
 
     if os.path.exists(save_path):
         print(f"Judged dataset already exists at {save_path}, skipping inference")
         exit(0)
-    
+
     client = OpenAI()
     answers = infer_from_LM_chat(data, inf_limit, client, model=OAI_MODEL)
 
@@ -198,7 +196,7 @@ if __name__ == "__main__":
 
 #     for item in data:
 #         gt_entities = item.gt_entities
-        
+
 #         for ent in item.pred_entities:
 #             print(f"Entity: {ent}")
 #             print(f"Text: {item.text}")
@@ -208,4 +206,3 @@ if __name__ == "__main__":
 #         break
 
 #     predictions = extract_answer(prompts, yes_id, no_id)
-

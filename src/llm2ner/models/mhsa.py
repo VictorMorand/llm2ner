@@ -1,13 +1,10 @@
-import torch, logging, gc
-from jaxtyping import Float, Bool, Int
+import torch
+import logging
+import gc
+from jaxtyping import Float, Bool
 from typing import (
     List,
-    Tuple,
-    Callable,
-    Type,
-    Union,
     Optional,
-    Dict,
     Any,
 )  # , TypeVar
 from functools import partial
@@ -18,6 +15,7 @@ import torch.nn.functional as F
 from einops import rearrange
 
 # HF and Tlens
+from transformers.modeling_utils import PreTrainedModel
 from transformer_lens import HookedTransformer
 from transformer_lens.loading_from_pretrained import (
     convert_hf_model_config,
@@ -29,18 +27,13 @@ from experimaestro import (
     field,
     Param,
     Constant,
-    Config,
-    DataPath,
-    Task,
-    LightweightTask,
-    Meta,
 )
 
 # Our code
-from llm2ner import utils, masks, heuristics
+from llm2ner import utils, masks
 import llm2ner.data as data
 from llm2ner.losses import balanced_BCE
-from llm2ner.models import NERmodel, train, FILL_NEG_LOGITS
+from llm2ner.models import NERmodel, manual_train, FILL_NEG_LOGITS
 
 
 ###### MHSA NER MODEL ######
@@ -210,16 +203,18 @@ class MHSA_NER(NERmodel):
         """
         if model is not None:
             # assuming inputs is tokens, compute reps
-            reps = self.get_representations(tokens=inputs, model=model, attn_mask=attn_mask)
+            reps = self.get_representations(
+                tokens=inputs, model=model, attn_mask=attn_mask
+            )
         else:
             # assuming inputs is already the representations
             reps = inputs
 
         assert len(reps.shape) == 3, "Input tensor must be of shape (batch, seq, dim)"
         b, seq, _ = reps.size()
-        
+
         reps = self.pre_LN(reps)
-        
+
         # Compute attention scores
         outputs = self.forward_MHSA(reps)  # shape (batch, seq, 2*n_heads*rank)
         # print("mhsa outputs shape:", outputs.shape)
@@ -259,7 +254,8 @@ class MHSA_NER(NERmodel):
     def training_step(
         self,
         batch: dict,
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
+        **kwargs
     ) -> torch.Tensor:
         """Compute loss for a batch of data
         Args:
@@ -277,9 +273,9 @@ class MHSA_NER(NERmodel):
             return_tensors="pt",
             truncation=True,
         )
-        tokens = inputs["input_ids"].cuda()
-        attn_mask = inputs["attention_mask"].cuda()
-        attn_patterns = batch["pattern"].cuda()  # tensor shape (batch, seq, seq)
+        tokens = inputs["input_ids"].to(self.device)
+        attn_mask = inputs["attention_mask"].to(self.device)
+        attn_patterns = batch["pattern"].to(self.device)  # tensor shape (batch, seq, seq)
 
         span_logits, batch_mask = self.forward(
             tokens, model, attn_mask=attn_mask, return_mask=True, return_logits=True
@@ -293,7 +289,7 @@ class MHSA_NER(NERmodel):
 
         return loss
 
-    def train(
+    def manual_train(
         self,
         train_loader,
         val_loader,
@@ -354,7 +350,7 @@ class MHSA_NER(NERmodel):
         gc.collect()
         torch.cuda.empty_cache()
 
-        hist = train(
+        hist = manual_train(
             self,
             train_loader=train_loader,
             val_loader=val_loader,
@@ -676,7 +672,8 @@ class MHSA_NER_man(NERmodel):
     def training_step(
         self,
         batch: dict,
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
+        **kwargs
     ) -> torch.Tensor:
         """Compute loss for a batch of data
         Args:
@@ -712,14 +709,14 @@ class MHSA_NER_man(NERmodel):
             raise ValueError("stop")
 
         texts = batch["text"]
-        tags = batch["token_tags"].float().cuda()
-        patterns = batch["pattern"].cuda()  # tensor shape (batch, seq, seq)
+        tags = batch["token_tags"].float().to(self.device)
+        patterns = batch["pattern"].to(self.device)  # tensor shape (batch, seq, seq)
         b_size = patterns.size(0)
         inputs = model.tokenizer(
             texts, padding=True, padding_side="right", return_tensors="pt"
         )
-        tokens = inputs["input_ids"].cuda()
-        attn_mask = inputs['attention_mask'].cuda()
+        tokens = inputs["input_ids"].to(self.device)
+        attn_mask = inputs["attention_mask"].to(self.device)
 
         padded = tokens == model.tokenizer.pad_token_id  # shape (batch, seq)
         padded_mask = padded.unsqueeze(1) | padded.unsqueeze(
@@ -729,7 +726,7 @@ class MHSA_NER_man(NERmodel):
         with torch.no_grad():  # we don't need gradients for the representations
             reps = utils.compute_to_layer(
                 model, self.layer, tokens, attn_mask=attn_mask, dtype=self.dtype
-            ).cuda()  # shape (batch, seq, dim)
+            ).to(self.device)  # shape (batch, seq, dim)
 
         span_probs, mask = self.forward(
             reps, return_logits=True, return_mask=True
@@ -768,7 +765,7 @@ class MHSA_NER_man(NERmodel):
         # debug_train()
         return loss
 
-    def train(
+    def manual_train(
         self,
         train_loader,
         val_loader,
@@ -860,7 +857,7 @@ class MHSA_NER_man(NERmodel):
                          - Sliding Window {self.sliding_window}... "
         )
 
-        hist = train(
+        hist = manual_train(
             self,
             train_loader=train_loader,
             val_loader=val_loader,

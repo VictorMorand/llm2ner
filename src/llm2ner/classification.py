@@ -1,8 +1,11 @@
-import json, logging
+import json
+import logging
 from typing import Optional, List, Dict, Union, Tuple
 from pathlib import Path
 from functools import partial
-import torch, torch.nn as nn, torch.nn.functional as F
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 from enum import Enum
 import numpy as np
 from tqdm import tqdm
@@ -11,18 +14,11 @@ from jaxtyping import Float, Int
 from sklearn.metrics import confusion_matrix
 from transformers.modeling_utils import PreTrainedModel
 from transformer_lens import HookedTransformer
-from transformer_lens.loading_from_pretrained import (
-    convert_hf_model_config,
-    get_official_model_name,
-)
 
 # xpm and misc
 from experimaestro import (
-    Config,
-    Param,
     DataPath,
     Task,
-    LightweightTask,
     Meta,
     Param,
     Constant,
@@ -35,7 +31,7 @@ from experimaestro import (
 from llm2ner import utils
 from llm2ner.losses import balanced_BCE
 import llm2ner.data as data
-from llm2ner.models import NERmodel, train, EPS
+from llm2ner.models import NERmodel, manual_train, EPS
 from xpm_torch import Module
 
 class NERCmodel(Module):
@@ -187,14 +183,14 @@ class NERCmodel(Module):
     def get_class_reps(
         self,
         classes: List[str],
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
         layer: int,
     ):
         """
         Computes class representations for given classes, adding self O class representation
         Args:
             classes: list of n classes to compute representations for
-            model: HookedTransformer form TransformerLens to extract representations from
+            model: HookedTransformer | PreTrainedModel,form TransformerLens to extract representations from
             layer: layer at which to extract the representations
         Returns:
             class_reps: tensor (n + 1, dim) representations for each class, including the O class at index 0
@@ -204,8 +200,8 @@ class NERCmodel(Module):
         inputs = model.tokenizer(
             prompts, return_tensors="pt", padding=True, padding_side="left"
         )
-        tokens = inputs["input_ids"].cuda()
-        attention_mask = inputs["attention_mask"].cuda()
+        tokens = inputs["input_ids"].to(self.device)
+        attention_mask = inputs["attention_mask"].to(self.device)
         reps = utils.compute_to_layer(
             model,
             layer,
@@ -250,7 +246,7 @@ class NERCmodel(Module):
         compute inferred spans representations them using the span_embed layer
         Args:
             tokens: tensor (batch, seq) of tokens
-            model: HookedTransformer form TransformerLens to extract representations from
+            model: HookedTransformer | PreTrainedModel,form TransformerLens to extract representations from
         Returns:
             inds: tensor (#entities, 3) indices of the entities in the batch (batch, begin, end)
             span_reps: tensor (#entities, dim) representations of entity spans
@@ -267,7 +263,7 @@ class NERCmodel(Module):
 
         inds = torch.tensor(
             [(b, *ent) for b in range(len(cand_entities)) for ent in cand_entities[b]]
-        ).cuda()  # shape (#entities , 3)
+        ).to(self.device)  # shape (#entities , 3)
 
         span_reps = self.embed_spans(inds, tokens, model, attn_mask=attn_mask)
 
@@ -284,7 +280,7 @@ class NERCmodel(Module):
         Args:
             entities: tensor (n_entities, 3) of entity indices (batch, begin, end)
             tokens: tensor (batch, seq) of tokens
-            model: HookedTransformer form TransformerLens to extract representations from
+            model: HookedTransformer | PreTrainedModel,form TransformerLens to extract representations from
         Returns:
             span_reps: tensor (n_entities, dim) of span representations
         """
@@ -315,7 +311,7 @@ class NERCmodel(Module):
         Args:
             span_reps: tensor (batch, n_entities, dim) representations of entity spans
             str_classes: list of classes to classify the entities, if None, uses precomputed class representations
-            model: HookedTransformer form TransformerLens to extract representations from, required if str_classes is provided
+            model: HookedTransformer | PreTrainedModel,form TransformerLens to extract representations from, required if str_classes is provided
             return_logits: if True, returns logits instead of classes
 
         Returns:
@@ -390,7 +386,7 @@ class NERCmodel(Module):
         """Predict and classify entities
         Args:
             tokens: tensor (batch, seq) of tokens
-            model: HookedTransformer form TransformerLens to extract representations from
+            model: HookedTransformer | PreTrainedModel,form TransformerLens to extract representations from
             str_classes: list of classes to classify the entities, if None, uses precomputed class representations
             zero_shot: if True, uses zero-shot classification, if None, uses str_classes to determine the classification method
             return_logits: if True, returns logits instead of classes
@@ -468,6 +464,7 @@ class NERCmodel(Module):
         loss_fn: str = "balanced_bce",
         temperature: float = 1.0,
         PL_threshold: float = 0.99,
+        **kwargs,
     ):
         """Train step for the model in the PileNER setting: we train the span embedding to match class embedding in cosine similarity.
         Args:
@@ -484,8 +481,8 @@ class NERCmodel(Module):
         inputs = model.tokenizer(
             batch["text"], return_tensors="pt", padding=True, padding_side="right",  truncation=True,
         )
-        tokens = inputs["input_ids"].cuda()
-        attention_mask = inputs["attention_mask"].cuda()
+        tokens = inputs["input_ids"].to(self.device)
+        attention_mask = inputs["attention_mask"].to(self.device)
 
         with torch.no_grad():  # we don't need gradients for the representations
             reps = utils.compute_to_layer(
@@ -495,7 +492,7 @@ class NERCmodel(Module):
                 attn_mask=attention_mask,
                 dim=self.model_dim,
                 dtype=self.dtype,
-            ).cuda()  # shape (batch, seq, dim)
+            ).to(self.device)  # shape (batch, seq, dim)
 
         # predict unclassified entitites, We are doing two LLMs forward pass here ... TODO
         pred_ents = self.ner_model.infer_entities(
@@ -510,11 +507,11 @@ class NERCmodel(Module):
                 cls.append(ent["class"])
             for ent in pred_ents[i]:
                 index = (i, *ent)
-                if not index in inds:
+                if index not in inds:
                     inds.append(index)
                     cls.append(0)  # 0 for no entity
 
-        inds = torch.tensor(inds).cuda()  # shape (#entities, 3)
+        inds = torch.tensor(inds).to(self.device)  # shape (#entities, 3)
         cls = np.array(cls)  # shape (#entities)
 
         span_reps = self.get_span_reps(reps, inds)  # shape (batch, #entities, dim)
@@ -593,7 +590,7 @@ class NERCmodel(Module):
         # raise ValueError("stop")
         return loss
 
-    def train(
+    def manual_train(
         self,
         train_loader: DataLoader,
         val_loader: DataLoader,
@@ -637,7 +634,7 @@ class NERCmodel(Module):
         )
         self.pos_weight = torch.tensor(pos_weight)
 
-        hist = train(
+        hist = manual_train(
             self,
             train_loader,
             val_loader,
@@ -663,7 +660,7 @@ class NERCmodel(Module):
         return hist
 
     def sup_training_step(
-        self, batch: dict, model: HookedTransformer, loss_fn: str = "CrossEntropy"
+        self, batch: dict, model: HookedTransformer | PreTrainedModel, loss_fn: str = "CrossEntropy"
     ) -> torch.Tensor:
         """Train step for the model in the supervised FineTunning setting.
         Args:
@@ -693,8 +690,8 @@ class NERCmodel(Module):
         inputs = model.tokenizer(
             batch["text"], return_tensors="pt", padding=True, padding_side="right"
         )
-        tokens = inputs["input_ids"].cuda()
-        attention_mask = inputs["attention_mask"].cuda()
+        tokens = inputs["input_ids"].to(self.device)
+        attention_mask = inputs["attention_mask"].to(self.device)
 
         with torch.no_grad():  # we don't need gradients for the representations
             reps = utils.compute_to_layer(
@@ -704,7 +701,7 @@ class NERCmodel(Module):
                 attn_mask=attention_mask,
                 dim=self.model_dim,
                 dtype=self.dtype,
-            ).cuda()  # shape (batch, seq, dim)
+            ).to(self.device)  # shape (batch, seq, dim)
 
         # predict unclassified entitites, We are doing two LLMs forward pass here ... TODO ?
         # Keep it like that, we extract representations at diff layers anyway
@@ -720,11 +717,11 @@ class NERCmodel(Module):
                 cls.append(ent["class"])
             for ent in pred_ents[i]:
                 index = (i, *ent)
-                if not index in inds:
+                if index not in inds:
                     inds.append(index)
                     cls.append(0)  # 0 for no entity
 
-        inds = torch.tensor(inds).cuda()  # shape (#entities, 3)
+        inds = torch.tensor(inds).to(self.device)  # shape (#entities, 3)
         cls = np.array(cls)  # shape (#entities)
 
         span_reps = self.get_span_reps(reps, inds)  # shape (batch, #entities, dim)
@@ -826,7 +823,7 @@ class NERCmodel(Module):
             "
         )
 
-        hist = train(
+        hist = manual_train(
             self,
             train_loader,
             val_loader,
@@ -876,7 +873,7 @@ class NERCmodel(Module):
         """Initialize the model on a given dataset, setting the id2type and type2id attributes"""
 
         if verbose:
-            logging.info(f"Initializing NERC model on dataset ...")
+            logging.info("Initializing NERC model on dataset ...")
 
         if self.class_reps is not None:
             if not force:
@@ -965,8 +962,8 @@ class NERCmodel(Module):
             inputs = model.tokenizer(
                 batch["text"], padding=True, padding_side="right", return_tensors="pt", truncation=True
             )
-            tokens = inputs["input_ids"].cuda()
-            attention_mask = inputs["attention_mask"].cuda()
+            tokens = inputs["input_ids"].to(self.device)
+            attention_mask = inputs["attention_mask"].to(self.device)
 
             pred_entities, pred_classes = self.forward(
                 tokens,
@@ -1193,7 +1190,7 @@ class LearnSupervisedNER(Task):
         for param in nerModel.parameters():
             param.requires_grad = True
 
-        hist = nerModel.train(
+        hist = nerModel.manual_train(
             train_loader,
             val_loader,
             optimizer=torch.optim.AdamW,
@@ -1281,6 +1278,7 @@ class LearnSupervisedNER(Task):
             min_lr=self.min_lr,
             n_val=self.n_val,
             early_stopping=self.early_stopping,  # stop training if no improvement on validation set
+            log_dir=str(self.runpath),
         )
 
         # save model
@@ -1321,7 +1319,7 @@ class LearnSupervisedNER(Task):
                 },
                 f,
             )
-        logging.info(f"Results saved !")
+        logging.info("Results saved !")
 
 class LearnZeroShotNER(Task):
     """From a NER model, learn a representation for the entities for zero shot inference."""
@@ -1462,7 +1460,7 @@ class LearnZeroShotNER(Task):
         else:
             raise ValueError(f"Unknown optimizer {self.optimizer}")
 
-        hist = nerc_model.train(
+        hist = nerc_model.manual_train(
             train_loader,
             val_loader,
             optimizer=optimizer,
@@ -1480,6 +1478,7 @@ class LearnZeroShotNER(Task):
             n_val=self.n_val,
             early_stopping=False,
             val_metric=self.val_metric,
+            log_dir=str(self.runpath),
         )
 
         # save model

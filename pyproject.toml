@@ -29,6 +29,7 @@ dependencies = [
     "tensorboard>=2.20.0",
     "transformer-lens>=2.15.0",
     "xpm-torch",
+    "lightning>=2.6.1",
 ]
 
 [project.urls]

@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import torch
 import logging
@@ -19,6 +20,7 @@ from typing import (
 
 # PyTorch
 import torch.nn as nn
+import pytorch_lightning as L
 from torch.nn.utils import clip_grad_norm_
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.tensorboard.writer import SummaryWriter
@@ -201,7 +203,7 @@ def flat_tags_from_probs(span_probs, threshold=0.5, strategy="line_col_greedy"):
 
 
 # only training logic
-def train(
+def manual_train(
     module: nn.Module,
     train_loader: DataLoader,
     val_loader: DataLoader,
@@ -220,9 +222,11 @@ def train(
     train_step_fn: Optional[Callable] = None,
     train_step_args: dict = {},
     evaluate_args: dict = {},
+    log_dir: Optional[str] = None,
 ):
     """Training loop for given module on the given loaders, implements all specific logics for training
     Module must have a training_step and init_training method.
+    WARNING - works only with Cuda enable -> use train_lightning instead if you want to train on CPU or without tensorboard logs for now, will add support later.
 
     Args:
         module: module to train
@@ -240,10 +244,11 @@ def train(
         min_lr: minimum learning rate, if reached, training stops
         n_val: number of steps between validation and logging
         dilate_entities: Compute the loss only on entities (dilated) and not the full sequence
+        log_dir: directory to write tensorboard logs
     Returns:
         hist: updated history of training
     """
-    writer = SummaryWriter()  # will write to ./runs/ folder by default
+    writer = SummaryWriter(log_dir=log_dir)  # will write to ./runs/ folder by default if log_dir is None
 
     # log working dir to tensorboard
     writer.add_text("workdir", os.getcwd(), 0)
@@ -272,7 +277,7 @@ def train(
     # move model to device if available
     if torch.cuda.is_available():
         use_cuda = True
-        module.to(model.device)
+        module.to(self.device)
     else:
         use_cuda = False
         module.cpu()
@@ -333,7 +338,7 @@ def train(
                 loss = 0
 
             # Validation and logging
-            if (i * batch_size) % n_val == 0:
+            if i % n_val == 0:
                 metrics = module.evaluate(val_loader, val_metric="all", verbose=False)
                 val = metrics.get(val_metric, None)
                 if val is None:
@@ -410,11 +415,15 @@ class NERmodel(Module):
     layer: Param[int]
     """max layer at which to extract the representations, avoid to compute all LLM layers"""
 
+    mask_bos: Param[bool] = False
+    """whether the model needs the llm loaded as a HookedTransformer to compute representations"""
+
     dim: int = None
     """dimension of the LLM representations, initialized in __initialize__"""
 
     need_hookedtransformer: bool = False
     """whether the model needs the llm loaded as a HookedTransformer to compute representations"""
+
 
     def __initialize__(self):
         super().__initialize__()
@@ -458,7 +467,7 @@ class NERmodel(Module):
     def get_representations(
         self,
         tokens: torch.Tensor,
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
         attn_mask: Optional[torch.Tensor] = None,
     ) -> Float[torch.Tensor, "batch seq dim"]:
         """Get representations for given tokens at the specified layer
@@ -519,7 +528,7 @@ class NERmodel(Module):
     def infer_tags(
         self,
         tokens: Float[torch.Tensor, "batch seq"],
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
         attn_mask: Optional[torch.Tensor] = None,
         decoding_strategy: str = None,
         threshold: float = 0.5,
@@ -574,7 +583,7 @@ class NERmodel(Module):
     def infer_entities(
         self,
         tokens: Float[torch.Tensor, "batch seq"],
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
         attn_mask: Optional[torch.Tensor] = None,
         decoding_strategy: str = "threshold",
         max_ent_length=MAX_ENT_LENGTH,
@@ -601,10 +610,10 @@ class NERmodel(Module):
             logging.debug(f"Decoding Using threshold {threshold}")
             batch, last, first = torch.where(spans_probs > threshold)
             entities = [[] for _ in range(b_size)]
-            for b, f, l in zip(
+            for b, f, lst in zip(
                 batch.cpu().numpy(), first.cpu().numpy(), last.cpu().numpy()
             ):
-                entities[b].append((f, l))
+                entities[b].append((f, lst))
         else:
             logging.debug(f"Using strategy {decoding_strategy}")
             entities = []
@@ -622,7 +631,7 @@ class NERmodel(Module):
             return entities
 
     def get_ckpt_name(self):
-        return f"{type(self).__name__}_{self.llm_name}_{self.layer}_{self.mode}"
+        return f"{type(self).__name__}_{self.llm_name}_L{self.layer}"
 
     def get_card_template(self):
         return CARD_TEMPLATE
@@ -641,6 +650,64 @@ class NERmodel(Module):
 
         template = Template(self.get_card_template())
         return template.render(**params)
+
+    @torch.no_grad()
+    def evaluate_batch(
+        self,
+        batch: dict,
+        model: HookedTransformer | PreTrainedModel,
+        decoding_strategy: str = None,
+        threshold: float = 0.5,
+    ):
+        """Evaluate one batch of data
+        Args:
+            batch: dict of data
+            model: HookedTransformer form TransformerLens to extract representations from
+            decoding_strategy: the stategy used to contraint NER prediction
+            threshold: threshold to use for strategies requiring one
+        Returns:
+            metrics: dict of metrics for the batch
+            b_pred_entities: batch of list of entities
+            b_span_probs: batch of span probabilities
+            offsets: token offsets
+        """
+        texts = batch["text"]
+        b_target_entities = [
+            [ent["tok_pos"] for ent in entities] for entities in batch["entities"]
+        ]  # list of list of Tuples (start, end) for each entity
+
+        inputs = model.tokenizer(
+            texts,
+            padding=True,
+            padding_side="right",
+            return_tensors="pt",
+            return_offsets_mapping=True,
+            truncation=True,
+        )
+        tokens = inputs["input_ids"].to(model.device)
+        offsets = inputs.pop("offset_mapping")
+        attn_mask = inputs["attention_mask"].to(model.device)
+
+        # get NER tags
+        b_pred_entities, b_span_probs = self.infer_entities(
+            tokens,
+            model,
+            attn_mask=attn_mask,
+            decoding_strategy=decoding_strategy,
+            threshold=threshold,
+            return_probs=True,
+        )  # batch of list of entities
+
+        # use count_perf to compute metrics
+        tp, fp, tot = count_perf(b_pred_entities, b_target_entities)
+        total_spans = (b_span_probs > 0).sum().item()
+
+        return {
+            "true_pos": tp,
+            "false_pos": fp,
+            "total": tot,
+            "total_spans": total_spans,
+        }, b_pred_entities, b_span_probs, offsets
 
     @torch.no_grad()
     def evaluate(
@@ -689,46 +756,19 @@ class NERmodel(Module):
                 data_folder=inference_path.parent,
             )
         for batch in tqdm(eval_loader, disable=not verbose, desc="Evaluation"):
-            texts = batch["text"]
-            b_target_entities = [
-                [ent["tok_pos"] for ent in entities] for entities in batch["entities"]
-            ]  # list of list of Tuples (start, end) for each entity
-
-            inputs = model.tokenizer(
-                texts,
-                padding=True,
-                padding_side="right",
-                return_tensors="pt",
-                return_offsets_mapping=True,
-                truncation=True,
+            b_metrics, b_pred_entities, b_span_probs, offsets = self.evaluate_batch(
+                batch, model, decoding_strategy=decoding_strategy, threshold=threshold
             )
-            tokens = inputs["input_ids"].to(model.device)
-            offsets = inputs.pop("offset_mapping")
-            attn_mask = inputs["attention_mask"].to(model.device)
-
-            # get NER tags
-            b_pred_entities, b_span_probs = self.infer_entities(
-                tokens,
-                model,
-                attn_mask=attn_mask,
-                decoding_strategy=decoding_strategy,
-                threshold=threshold,
-                return_probs=True,
-            )  # batch of list of entities
 
             if inference_path is not None:
                 inferred_data.samples += data.InferredDataset.get_samples_from_outputs(
                     batch, b_pred_entities, b_span_probs, offsets
                 )
             # use count_perf to compute metrics
-            tp, fp, tot = count_perf(b_pred_entities, b_target_entities)
-            true_pos += tp
-            false_pos += fp
-            total += tot  # total number of labeled entities
-            n_tok = tokens.size(1)
-            total_spans += (
-                (b_span_probs > 0).sum().item()
-            )  # total number of predicted spans
+            true_pos += b_metrics["true_pos"]
+            false_pos += b_metrics["false_pos"]
+            total += b_metrics["total"]  # total number of labeled entities
+            total_spans += b_metrics["total_spans"]  # total number of predicted spans
 
         # compute metrics
         precision = true_pos / (true_pos + false_pos + EPS)
@@ -838,7 +878,9 @@ class NERmodel(Module):
         def execute(self):
             """Called when this task is run"""
 
-            ner_model = self.ner_model.to(model.device)
+            ner_model = self.ner_model
+            ner_model.initialize()  # initialize the model to set the dim if not set
+            # ner_model.eval()
             logging.info(f"Loaded model {ner_model}")
 
             llm_name = ner_model.llm_name
@@ -851,6 +893,7 @@ class NERmodel(Module):
                 cut_to_layer=ner_model.layer,
             ).eval()
 
+            ner_model = ner_model.to(model.device)
             c_length = utils.get_model_max_length(llm_name)
 
             logging.info(f"Evaluating model on datasets {self.eval_datasets}")
@@ -899,3 +942,175 @@ class NERmodel(Module):
                     f,
                 )
             logging.info("Results saved !")
+
+
+class LNERModel(L.LightningModule):
+    """Temporary wrapper to train NERmodel with PyTorch Lightning"""
+
+    def __init__(
+        self,
+        ner_model: "NERmodel",
+        llm_backbone: HookedTransformer,
+        training_step_kwargs: Optional[dict] = None,
+        **kwargs,
+    ):
+        super().__init__()
+        self.ner_model = ner_model
+        self.llm_backbone = llm_backbone
+        self.training_step_kwargs = training_step_kwargs or {}
+        # Freeze backbone
+        for param in self.llm_backbone.parameters():
+            param.requires_grad = False
+
+        self.save_hyperparameters(ignore=["ner_model", "llm_backbone", "training_step_kwargs"])
+        self.validation_step_outputs = []
+
+    def forward(self, *args, **kwargs):
+        return self.ner_model(*args, **kwargs)
+
+    def training_step(self, batch, batch_idx):
+        # We assume subclasses of NERmodel have a training_step method
+        # but we need to pass the model explicitly as they currently expect it
+        loss = self.ner_model.training_step(
+            batch, self.llm_backbone, **self.training_step_kwargs
+        )
+        self.log(
+            "train/loss",
+            loss,
+            prog_bar=True,
+            on_step=True,
+            on_epoch=True,
+            batch_size=len(batch["text"]),
+        )
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        # reuse our refactored evaluate_batch
+        b_metrics, _, _, _ = self.ner_model.evaluate_batch(
+            batch,
+            self.llm_backbone,
+            decoding_strategy=self.hparams.get("decoding_strategy"),
+            threshold=self.hparams.get("threshold", 0.5),
+        )
+        self.validation_step_outputs.append(b_metrics)
+        return b_metrics
+
+    def on_validation_epoch_end(self):
+        outputs = self.validation_step_outputs
+        if not outputs:
+            return
+
+        true_pos = sum(x["true_pos"] for x in outputs)
+        false_pos = sum(x["false_pos"] for x in outputs)
+        total = sum(x["total"] for x in outputs)
+
+        precision = true_pos / (true_pos + false_pos + EPS)
+        recall = true_pos / (total + EPS)
+        f1 = 2 * precision * recall / (precision + recall + EPS)
+
+        self.log("val/precision", precision, prog_bar=True, sync_dist=True)
+        self.log("val/recall", recall, prog_bar=True, sync_dist=True)
+        self.log("val/f1", f1, prog_bar=True, sync_dist=True)
+
+        self.validation_step_outputs.clear()
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.AdamW(
+            self.ner_model.parameters(),
+            lr=self.hparams.lr,
+            weight_decay=self.hparams.get("weight_decay", 0.0),
+        )
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="max" if self.hparams.val_metric == "f1" else "min",
+            factor=0.5,
+            patience=self.hparams.patience,
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": f"val/{self.hparams.val_metric}",
+            },
+        }
+
+
+def train_lightning(
+    module: NERmodel,
+    model: HookedTransformer | PreTrainedModel,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    epochs: int = 2,
+    lr: float = 1e-3,
+    val_metric: str = "f1",
+    grad_clip: float = 0.0,
+    accumulation_steps: int = 1,
+    patience: int = 3,
+    n_val: int = 1000,
+    log_dir: Optional[str] = None,
+    **kwargs,
+):
+    """Lightning version of the training loop"""
+    from pytorch_lightning.callbacks import (
+        ModelCheckpoint,
+        EarlyStopping,
+        LearningRateMonitor,
+    )
+    from pytorch_lightning.loggers import TensorBoardLogger
+
+    lightning_model = LNERModel(
+        ner_model=module,
+        llm_backbone=model,
+        lr=lr,
+        patience=patience,
+        val_metric=val_metric,
+        training_step_kwargs=kwargs,
+    )
+
+    logger = TensorBoardLogger(
+        save_dir=log_dir or "lightning_logs", name=module.get_ckpt_name()
+    )
+
+    checkpoint_callback = ModelCheckpoint(
+        monitor=f"val/{val_metric}",
+        mode="max" if val_metric == "f1" else "min",
+        save_top_k=1,
+        filename="best_model",
+    )
+
+    early_stop_callback = EarlyStopping(
+        monitor=f"val/{val_metric}",
+        patience=patience * 2,
+        mode="max" if val_metric == "f1" else "min",
+    )
+
+    # validation interval
+    batch_size = getattr(train_loader.dataset, "batch_size", 1)
+    val_check_interval = max(1, n_val // batch_size)
+    if val_check_interval > len(train_loader):
+        val_check_interval = 1.0  # validate at the end of epoch
+
+    trainer = L.Trainer(
+        max_epochs=epochs,
+        gradient_clip_val=grad_clip if grad_clip > 0 else None,
+        accumulate_grad_batches=accumulation_steps,
+        logger=logger,
+        callbacks=[
+            checkpoint_callback,
+            early_stop_callback,
+            LearningRateMonitor(logging_interval="step"),
+        ],
+        devices="auto",
+        accelerator="auto",
+        val_check_interval=val_check_interval,
+    )
+
+    # Redirect stdout to stderr to ensure all logs go to .err files
+    original_stdout = sys.stdout
+    sys.stdout = sys.stderr
+    try:
+        trainer.fit(lightning_model, train_loader, val_loader)
+    finally:
+        sys.stdout = original_stdout
+
+    return lightning_model

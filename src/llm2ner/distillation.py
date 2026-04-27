@@ -1,12 +1,14 @@
-from typing import Optional, Dict, Any
+from typing import Optional
 from functools import partial
-import logging, torch
+import logging
+import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
 from transformer_lens import HookedTransformer
+from transformers import PreTrainedModel
 
-from llm2ner.models import NERmodel, train
+from llm2ner.models import NERmodel, train_lightning
 from llm2ner.losses import balanced_BCE
 
 
@@ -134,7 +136,7 @@ def distill_step(
     batch: dict,
     student: NERmodel,
     teacher: NERmodel,
-    model: HookedTransformer,
+    model: HookedTransformer | PreTrainedModel,
     loss_fn: DistillLoss = DistillLoss(),
 ):
     """
@@ -154,12 +156,12 @@ def distill_step(
         return_tensors="pt",
         truncation=True,
     )
-    tokens = inputs["input_ids"].cuda()  # shape (batch, seq)
-    attn_mask = inputs["attention_mask"].cuda()
+    tokens = inputs["input_ids"].to(self.device)  # shape (batch, seq)
+    attn_mask = inputs["attention_mask"].to(self.device)
 
     gt_spans = batch[
         "pattern"
-    ].cuda()  # data must be in 'last' mode <-> patterns are span labels
+    ].to(self.device)  # data must be in 'last' mode <-> patterns are span labels
 
     # Forward pass through the teacher model
     with torch.no_grad():
@@ -183,7 +185,7 @@ def distill_step(
 def train_distill(
     student: NERmodel,
     teacher: NERmodel,
-    model: HookedTransformer,
+    model: HookedTransformer | PreTrainedModel,
     train_loader: DataLoader,
     val_loader: DataLoader,
     teacher_thr_prob: float = 0.9,
@@ -239,8 +241,9 @@ def train_distill(
             "
     )
 
-    return train(
+    return train_lightning(
         student,
+        model=model,
         train_loader=train_loader,
         val_loader=val_loader,
         optimizer=optimizer,

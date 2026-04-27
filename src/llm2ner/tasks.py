@@ -1,15 +1,16 @@
-import torch, json, logging
+import torch
+import json
+import logging
 from copy import deepcopy
 from pathlib import Path
 from typing import List, Optional
-from experimaestro import Task, Param, Constant, Meta, field, PathGenerator, Config
+from experimaestro import Task, Param, Constant, Meta, field, PathGenerator
 # Import all NER models
 from llm2ner.models.TokenMatching import (
     compute_metrics,
     SelfAttention,
     AttentionCNN_NER,
     TokenMatchingNER,
-    CLQK_NER,
 )
 from llm2ner.models.mhsa import MHSA_NER
 from llm2ner.data import load_dataset_splits
@@ -72,7 +73,7 @@ class LearnTokenMatching(Task):
     """Path to the data folder"""
     runpath: Meta[Path] = field(default_factory=PathGenerator("runs"))
     """Path to store tensorboard logs"""
-    parameters_path: Meta[Path] = field(default_factory=PathGenerator("parameters.pth"))
+    model_dir: Meta[Path] = field(default_factory=PathGenerator("model"))
     """Path to store the model parameters"""
     # Misc
     run: Param[int] = field(default=0, ignore_default=True)
@@ -82,14 +83,17 @@ class LearnTokenMatching(Task):
 
     def task_outputs(self, dep):
         return dep(
-            self.ner_model.loader_config(self.parameters_path)
+            self.ner_model.loader_config(self.model_dir)
         )
 
     def execute(self):
         """Called when this task is run"""
 
         ### Load model and dataset
-        ner_model = self.ner_model  # .instance() ?
+        ner_model = self.ner_model
+        ner_model.initialize()  # initialize the model to set the dimension attribute
+
+        logging.info(f"Task LearnTokenMatching, training {ner_model}")
 
         # Load model
         logging.info(
@@ -100,6 +104,7 @@ class LearnTokenMatching(Task):
         if self.max_length > c_length:
             logging.warning(f"max_length {self.max_length} is greater than the model's max length {c_length}, setting max_length to {c_length}")
             self.max_length = c_length
+
 
         model = utils.load_llm(ner_model.llm_name, to_hookedtransformer=self.use_hookedtransformer, cut_to_layer=ner_model.layer).eval()
         logging.debug(f"Done ! {ner_model.llm_name} dimension is {ner_model.dim}")
@@ -129,7 +134,7 @@ class LearnTokenMatching(Task):
         train_loader = train_dataset.get_loader(batch_size=self.batch_size)
         val_loader = val_dataset.get_loader(batch_size=self.batch_size)
 
-        hist = ner_model.train(
+        hist = ner_model.manual_train(
             train_loader,
             val_loader,
             epochs=self.epochs,
@@ -144,6 +149,7 @@ class LearnTokenMatching(Task):
             # validation
             n_val=self.n_val,
             val_metric=self.val_metric,
+            log_dir=str(self.runpath),
         )
 
 
@@ -152,14 +158,14 @@ class LearnTokenMatching(Task):
         for phase in range(self.self_distillation_phases):
             save_name = f"model_phase_{phase}.pth"
             torch.save(ner_model.state_dict(), save_name)
-            ner_model.cuda()
-            logging.info(f"Saved model parameters for phase {phase} to {save_name}")
+            ner_model.to(model.device)
 
+            logging.info(f"Saved model parameters for phase {phase} to {save_name}")
             logging.info(f"Distillation Phase {phase + 1}/{self.self_distillation_phases}")
-            teacher_model = deepcopy(ner_model).cuda()
+            teacher_model = deepcopy(ner_model).to(model.device)
 
             if self.reset_student_weights:
-                logging.info(f"Reset student weights random initialization")
+                logging.info("Reset student weights random initialization")
                 utils.reinit_weights(ner_model)
 
             hist = train_distill(
@@ -184,13 +190,13 @@ class LearnTokenMatching(Task):
 
 
         # save model
-        torch.save(ner_model.state_dict(), self.parameters_path)
+        ner_model.save_model(self.model_dir / "model.safetensors")
         logging.info(f"Saved model parameters after {self.self_distillation_phases} phases")
         llm_label = ner_model.llm_name.split("/")[-1]
         del train_loader, val_loader, train_dataset, val_dataset
 
         if test_dataset is not None:
-            ner_model.cuda()
+            ner_model.to(model.device)
             test_loader = test_dataset.get_loader(batch_size=30)
             # Compute metrics
             metrics = ner_model.evaluate(test_loader)
@@ -264,12 +270,12 @@ class LearnMHSAmodel(Task):
     """Path to the data folder"""
     runpath: Meta[Path] = field(default_factory=PathGenerator("runs"))
     """Path to store tensorboard logs"""
-    parameters_path: Meta[Path] = field(default_factory=PathGenerator("parameters.pth"))
+    model_dir: Meta[Path] = field(default_factory=PathGenerator("model"))
     """Path to store the model parameters"""
 
     def task_outputs(self, dep):
         return dep(
-            MHSA_NER.Loader.C(model=self.ner_model, parameters=self.parameters_path)
+            self.ner_model.loader_config(self.model_dir)
         )
 
     def execute(self):
@@ -310,7 +316,7 @@ class LearnMHSAmodel(Task):
         train_loader = train_dataset.get_loader(batch_size=self.batch_size)
         val_loader = val_dataset.get_loader(batch_size=self.batch_size)
 
-        hist = ner_model.train(
+        hist = ner_model.manual_train(
             train_loader,
             val_loader,
             epochs=self.epochs,
@@ -322,6 +328,7 @@ class LearnMHSAmodel(Task):
             # validation
             n_val=self.n_val,
             val_metric=self.val_metric,
+            log_dir=str(self.runpath),
         )
 
         # If self distillation is enabled, run it
@@ -334,12 +341,12 @@ class LearnMHSAmodel(Task):
             teacher_model = deepcopy(ner_model)
 
             if self.reset_student_weights:
-                logging.info(f"Reset student weights random initialization")
+                logging.info("Reset student weights random initialization")
                 utils.reinit_weights(ner_model)
 
             hist += train_distill(
-                student=ner_model.cuda(),  # the student model
-                teacher=teacher_model.cuda(),  # the teacher model
+                student=ner_model.to(model.device),  # the student model
+                teacher=teacher_model.to(model.device),  # the teacher model
                 model=model,
                 train_loader=train_loader,
                 val_loader=val_loader,
@@ -359,7 +366,7 @@ class LearnMHSAmodel(Task):
 
         # save last model and send to task output
         llm_label = ner_model.llm_name.split("/")[-1]
-        torch.save(ner_model.state_dict(), self.parameters_path)
+        ner_model.save_model(self.model_dir / "model.safetensors")
 
         del train_loader, val_loader, train_dataset, val_dataset
 
@@ -367,7 +374,7 @@ class LearnMHSAmodel(Task):
             json.dump(hist, f)
 
         if test_dataset is not None:
-            ner_model.cuda()
+            ner_model.to(model.device)
             test_loader = test_dataset.get_loader(batch_size=30)
             # Compute metrics
             metrics = ner_model.evaluate(test_loader)
@@ -414,7 +421,7 @@ class EvalModel(Task):
     def execute(self):
         """Called when this task is run"""
 
-        ner_model = self.ner_model.cuda()
+        ner_model = self.ner_model.to(model.device)
         logging.info(f"Loaded model {ner_model}")
 
         llm_name = ner_model.llm_name
@@ -454,7 +461,7 @@ class EvalModel(Task):
                 },
                 f,
             )
-        logging.info(f"Results saved !")
+        logging.info("Results saved !")
 
 
 ### DEPRECATED TESTS ###
@@ -535,7 +542,7 @@ class LearnNERselfAttn(Task):
             k=self.rank,  # rank r attention layer
             causal_mask=self.causal_mask,
             mask_bos=self.mask_bos,
-        ).cuda()
+        ).to(model.device)
 
         logging.info("Building loaders...")
         train_loader = train_dataset.get_loader(batch_size=self.batch_size)
@@ -543,7 +550,7 @@ class LearnNERselfAttn(Task):
             batch_size=20
         )  # smaller batch size for validation to spare memory
 
-        hist = attn.train(
+        hist = attn.manual_train(
             model,
             self.layer,
             train_loader,
@@ -629,12 +636,12 @@ class Learn_AttentionCNN(Task):
     # Meta params, not used to compute signature
     data_folder: Meta[str] = field(default="", ignore_default=True)  # Folder where the data is stored, not a parameter
     """Path to the data folder"""
-    parameters_path: Meta[Path] = field(default_factory=PathGenerator("parameters.pth"))
+    model_dir: Meta[Path] = field(default_factory=PathGenerator("model"))
     """Path to store the model parameters"""
 
     def task_outputs(self, dep):
         return dep(
-            AttentionCNN_NER.Loader(model=self.ner_model, parameters=self.parameters_path)
+            AttentionCNN_NER.Loader(model=self.ner_model, parameters=self.model_dir)
         )
 
     def execute(self):
@@ -676,7 +683,7 @@ class Learn_AttentionCNN(Task):
         train_loader = train_dataset.get_loader(batch_size=self.batch_size)
         val_loader = val_dataset.get_loader(batch_size=self.batch_size)
 
-        hist = ner_model.train(
+        hist = ner_model.manual_train(
             train_loader,
             val_loader,
             layer=ner_model.layer,
@@ -699,7 +706,7 @@ class Learn_AttentionCNN(Task):
         model_label = ner_model.llm_name.split("/")[-1]
 
         # save model
-        torch.save(ner_model.state_dict(), self.parameters_path)
+        ner_model.save_model(self.model_dir / "model.safetensors")
         del train_loader, val_loader, train_dataset, val_dataset
 
         if test_dataset is not None:

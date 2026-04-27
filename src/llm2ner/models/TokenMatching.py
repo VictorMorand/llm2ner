@@ -1,17 +1,15 @@
-import time, torch, logging, gc, json
+import torch
+import logging
+import gc
 import numpy as np
-from pathlib import Path
 from jaxtyping import Float, Bool, Int
 from typing import (
     List,
     Tuple,
     Callable,
-    Type,
     Union,
     Optional,
-    Dict,
     Any,
-    overload,
 )  # , TypeVar
 from functools import lru_cache, partial
 from tqdm import tqdm
@@ -26,28 +24,27 @@ from einops import rearrange
 from transformer_lens import HookedTransformer
 from transformer_lens.loading_from_pretrained import (
     convert_hf_model_config,
-    get_official_model_name,
 )
-from transformers import PreTrainedTokenizerBase
+from transformers import PreTrainedTokenizerBase, PreTrainedModel
 
 # xpm and misc
-from experimaestro import  (
+from experimaestro import (
     field,
-    Config,
     Param,
-    DataPath,
-    Task,
-    LightweightTask,
-    Meta,
-    Param,
-    Constant,
 )
+from xpm_torch.utils import to_device
 
 # Our code
 from llm2ner import utils, masks, heuristics
 import llm2ner.data as data
 from llm2ner.losses import balanced_BCE
-from llm2ner.models.model import *
+from llm2ner.models.model import (
+    MAX_ENT_LENGTH,
+    FILL_NEG_LOGITS,
+    DEFAULT_KERNEL_PADDING,
+    NERmodel,
+    train_lightning,
+)
 
 
 ######################  Attn score manipulation ######################
@@ -305,7 +302,11 @@ class SelfAttention(nn.Module):
 
     @torch.no_grad()
     def validate_BCE(
-        self, model: HookedTransformer, layer: int, val_loader, verbose: bool = False
+        self,
+        model: HookedTransformer | PreTrainedModel,
+        layer: int,
+        val_loader,
+        verbose: bool = False,
     ):
         """Run validation metric on given loader
         Args:
@@ -329,20 +330,22 @@ class SelfAttention(nn.Module):
             inputs = model.tokenizer(
                 texts, padding=True, padding_side="right", return_tensors="pt"
             )
-            tokens = inputs["input_ids"].cuda()
-            attn_mask = inputs["attention_mask"].cuda()
+            tokens = inputs["input_ids"].to(self.device)
+            attn_mask = inputs["attention_mask"].to(self.device)
 
             batch_size, seq = tokens.shape
-            patterns = batch["pattern"].cuda()  # tensor shape (batch, seq, seq)
+            patterns = batch["pattern"].to(
+                self.device
+            )  # tensor shape (batch, seq, seq)
             masked_tokens = tokens == model.tokenizer.pad_token_id  # shape (batch, seq)
             padded_mask = masked_tokens.unsqueeze(1) | masked_tokens.unsqueeze(
                 2
             )  # transform to padded mask to 2D mask
 
             # we batch the forward pass of representations and attention scores
-            reps = utils.compute_to_layer(
-                model, layer, tokens, attn_mask=attn_mask
-            ).cuda()  # shape (batch, seq, dim)
+            reps = utils.compute_to_layer(model, layer, tokens, attn_mask=attn_mask).to(
+                self.device
+            )  # shape (batch, seq, dim)
             scores, mask = self.forward(
                 reps, return_mask=True
             )  #  (batch, seq, seq) | (1, seq, seq)
@@ -360,7 +363,7 @@ class SelfAttention(nn.Module):
             logging.info(f"Validation loss: {val_metric}")
         return val_metric
 
-    def train(
+    def manual_train(
         self,
         layer: int,
         train_loader,
@@ -515,18 +518,20 @@ class SelfAttention(nn.Module):
 
                 # stop if lr is too low
                 if optimizer.param_groups[0]["lr"] < min_lr:
-                    logging.info(f"Minimum learning rate reached, stopping training")
+                    logging.info("Minimum learning rate reached, stopping training")
                     break
 
                 i += 1
                 texts = batch["text"]
-                tags = batch["token_tags"].float().cuda()
-                patterns = batch["pattern"].cuda()  # tensor shape (batch, seq, seq)
+                tags = batch["token_tags"].float().to(self.device)
+                patterns = batch["pattern"].to(
+                    self.device
+                )  # tensor shape (batch, seq, seq)
                 inputs = model.tokenizer(
                     texts, padding=True, padding_side="right", return_tensors="pt"
                 )
-                tokens = inputs["input_ids"].cuda()
-                attn_mask = inputs["attention_mask"].cuda()
+                tokens = inputs["input_ids"].to(self.device)
+                attn_mask = inputs["attention_mask"].to(self.device)
 
                 padded = tokens == pad_id  # shape (batch, seq)
                 padded_mask = padded.unsqueeze(1) | padded.unsqueeze(
@@ -537,7 +542,9 @@ class SelfAttention(nn.Module):
                 with torch.no_grad():  # we don't need gradients for the representations
                     reps = utils.compute_to_layer(
                         model, layer, tokens, attn_mask=attn_mask
-                    ).cuda()  # shape (batch, seq, dim)
+                    ).to(
+                        self.device
+                    )  # shape (batch, seq, dim)
 
                 ## TRAINING Self Attention
                 # TODO: fow now we compute all scores, we could optimize this by computing only the scores we need
@@ -686,18 +693,18 @@ class ReprClassifier(nn.Module):
             inputs = model.tokenizer(
                 texts, padding=True, padding_side="right", return_tensors="pt"
             )
-            tokens = inputs["input_ids"].cuda()
-            attn_mask = inputs["attention_mask"].cuda()
+            tokens = inputs["input_ids"].to(self.device)
+            attn_mask = inputs["attention_mask"].to(self.device)
 
-            end_ent = batch["end_ent"].cuda()
+            end_ent = batch["end_ent"].to(self.device)
 
             # masking
             mask = (tokens != pad_id) & (tokens != bos_id)  # shape (batch, seq)
 
             # Forward pass
-            reps = utils.compute_to_layer(
-                model, layer, tokens, attn_mask=attn_mask
-            ).cuda()  # shape (batch, seq, dim)
+            reps = utils.compute_to_layer(model, layer, tokens, attn_mask=attn_mask).to(
+                self.device
+            )  # shape (batch, seq, dim)
 
             # mask tokens
             reps = reps[mask]  # shape (batch, seq, dim)
@@ -728,7 +735,7 @@ class ReprClassifier(nn.Module):
         else:
             raise ValueError(f"metric {val_metric} not implemented")
 
-    def train(
+    def manual_train(
         self,
         layer: int,
         train_loader,
@@ -828,10 +835,10 @@ class ReprClassifier(nn.Module):
                 inputs = model.tokenizer(
                     texts, padding=True, padding_side="right", return_tensors="pt"
                 )
-                tokens = inputs["input_ids"].cuda()
-                attn_mask = inputs["attention_mask"].cuda()
+                tokens = inputs["input_ids"].to(self.device)
+                attn_mask = inputs["attention_mask"].to(self.device)
 
-                end_ent = batch["end_ent"].cuda()
+                end_ent = batch["end_ent"].to(self.device)
 
                 # masking
                 mask = (tokens != pad_id) & (tokens != bos_id)  # shape (batch, seq)
@@ -841,7 +848,9 @@ class ReprClassifier(nn.Module):
                 # Forward pass
                 reps = utils.compute_to_layer(
                     model, layer, tokens, attn_mask=attn_mask
-                ).cuda()  # shape (batch, seq, dim)
+                ).to(
+                    self.device
+                )  # shape (batch, seq, dim)
                 # mask tokens
                 reps = reps[mask]  # shape (batch, seq, dim)
                 end_ent = end_ent[mask]  # shape (batch, seq)
@@ -879,7 +888,7 @@ class ReprClassifier(nn.Module):
                     scheduler.step(val)
                     hist[-1]["val_metric"] = val
                 if optimizer.param_groups[0]["lr"] < min_lr:
-                    logging.info(f"Minimum learning rate reached, stopping training")
+                    logging.info("Minimum learning rate reached, stopping training")
                     break
             if optimizer.param_groups[0]["lr"] < min_lr:
                 break
@@ -893,7 +902,7 @@ class ReprClassifier(nn.Module):
 @torch.no_grad()
 def compute_metrics(
     dataloader,
-    model: HookedTransformer,
+    model: HookedTransformer | PreTrainedModel,
     attn: SelfAttention,
     layer: int,
     sliding_window=None,
@@ -941,12 +950,12 @@ def compute_metrics(
         inputs = model.tokenizer(
             texts, padding=True, padding_side="right", return_tensors="pt"
         )
-        tokens = inputs["input_ids"].cuda()
-        attn_mask = inputs["attention_mask"].cuda()
+        tokens = inputs["input_ids"].to(self.device)
+        attn_mask = inputs["attention_mask"].to(self.device)
 
-        reps = utils.compute_to_layer(
-            model, layer, tokens, attn_mask=attn_mask
-        ).cuda()  # shape (batch, seq, dim)
+        reps = utils.compute_to_layer(model, layer, tokens, attn_mask=attn_mask).to(
+            self.device
+        )  # shape (batch, seq, dim)
         b_scores = attn.forward(reps)  # shape (batch, seq, seq)
         str_tokens = batch["str_tokens"]
         targets = batch["token_tags"].cpu()
@@ -1167,7 +1176,7 @@ class TokenMatchingNER(NERmodel):
     sliding_window: Param[int] = field(default=0, ignore_default=True)
     """Normalization method for attn scores, default none, can be 'cosine', or 'log_sigmoid' """
 
-    use_cosine: Param[bool] = field(default=False, ignore_default=True)
+    use_cosine: Param[bool] = field(default=True, ignore_default=True)
     """Whether to use cosine normalization for the attention scores, default False"""
 
     normalize_scores: Param[str] = field(default="", ignore_default=True)
@@ -1181,14 +1190,14 @@ class TokenMatchingNER(NERmodel):
         ), f"Aggregation method '{self.method}' not implemented, choose among: {', '.join(METHODS)}"
         assert (
             self.llm_name is not None
-        ), f"llm_name should be set to the name of the model used to extract the representations"
+        ), "llm_name should be set to the name of the model used to extract the representations"
         assert self.rank > 0, f"rank should be > 0, got {self.rank}"
         assert (
             self.sliding_window >= 0
         ), f"sliding_window should be >= 0, got {self.sliding_window}"
         assert (
             self.layer is not None
-        ), f"layer should be set to the layers of the model used to extract the representations"
+        ), "layer should be set to the layers of the model used to extract the representations"
 
         super().__initialize__()
 
@@ -1273,11 +1282,12 @@ class TokenMatchingNER(NERmodel):
         else:
             raise ValueError(f"mode {self.mode} not implemented")
 
-    def get_QK_reps(self,
-            tokens: Float[torch.Tensor, "batch seq"],
-            model: Union[HookedTransformer, nn.Module],
-            attn_mask: Optional[Float[torch.Tensor, "batch seq seq"]] = None,
-            ) -> Tuple[
+    def get_QK_reps(
+        self,
+        tokens: Float[torch.Tensor, "batch seq"],
+        model: Union[HookedTransformer, nn.Module],
+        attn_mask: Optional[Float[torch.Tensor, "batch seq seq"]] = None,
+    ) -> Tuple[
         Float[torch.Tensor, "batch seq rank"],
         Float[torch.Tensor, "batch seq rank"],
         Float[torch.Tensor, "batch seq dim"],
@@ -1286,7 +1296,9 @@ class TokenMatchingNER(NERmodel):
         query and key scores are computed as a linear transformation of all computed query and key from the LLM
         """
         # get the query and key scores from the model with shape (len(layers), batch, seq, n_heads, dim_head)
-        reps = self.get_representations(tokens, model, attn_mask=attn_mask)  # shape (batch, seq, dim)
+        reps = self.get_representations(
+            tokens, model, attn_mask=attn_mask
+        )  # shape (batch, seq, dim)
 
         return (reps @ self.W_Q), (reps @ self.W_K), reps
 
@@ -1328,7 +1340,7 @@ class TokenMatchingNER(NERmodel):
 
         scores = self.scale * torch.einsum("b i h, b j h -> b i j", Q, K)
 
-        scores_mask = self.get_mask(seq)  # shape (1, seq, seq)
+        scores_mask = self.get_mask(seq).to(self.device)  # shape (1, seq, seq)
 
         scores.masked_fill_(
             ~scores_mask, FILL_NEG_LOGITS
@@ -1548,7 +1560,7 @@ class TokenMatchingNER(NERmodel):
         self,
         batch: dict,
         tokens: Float[torch.Tensor, "batch seq"],
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
         scores: Float[torch.Tensor, "batch seq seq"],
         end_ent_scores: Float[torch.Tensor, "batch seq"],
         mask: Bool[torch.Tensor, "batch seq seq"],
@@ -1610,13 +1622,15 @@ class TokenMatchingNER(NERmodel):
             plt.show()
             raise ValueError("stop")
 
-        tags = batch["token_tags"].float().cuda()
-        attn_patterns = batch["pattern"].cuda()  # tensor shape (batch, seq, seq)
-        end_ent = batch["end_ent"].cuda()
+        tags = batch["token_tags"].float().to(self.device)
+        attn_patterns = batch["pattern"].to(
+            self.device
+        )  # tensor shape (batch, seq, seq)
+        end_ent = batch["end_ent"].to(self.device)
         tokenizer: PreTrainedTokenizerBase = model.tokenizer  # type: ignore
         b_size = attn_patterns.size(0)
         # type:ignore shape (batch, seq)
-        padded: torch.Tensor = (tokens == tokenizer.pad_token_id)
+        padded: torch.Tensor = tokens == tokenizer.pad_token_id
 
         # transform to padded mask to 2D mask
         padded_mask = padded.unsqueeze(1) | padded.unsqueeze(2)
@@ -1671,9 +1685,9 @@ class TokenMatchingNER(NERmodel):
 
         if method == METHODS.INTER_FIRST_SOFT:
 
-            span_patterns = data.get_span_patterns(
-                batch
-            ).cuda()  # tensor shape (batch, seq, seq)
+            span_patterns = data.get_span_patterns(batch).to(
+                self.device
+            )  # tensor shape (batch, seq, seq)
 
             # attn_scores andend_ent_scores are logits ,  span_scores is probs,
             # attn_loss = F.cross_entropy(
@@ -1736,7 +1750,7 @@ class TokenMatchingNER(NERmodel):
     def forward(
         self,
         tokens: Float[torch.Tensor, "batch seq"],
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
         attn_mask: Optional[Float[torch.Tensor, "batch seq seq"]] = None,
         return_logits: bool = False,
         return_mask: bool = False,
@@ -1781,10 +1795,13 @@ class TokenMatchingNER(NERmodel):
         else:
             return span_logits
 
-    def training_step(self, batch: dict, model: HookedTransformer) -> torch.Tensor:
+    def training_step(
+        self, batch: dict, model: HookedTransformer | None, **kwargs
+    ) -> torch.Tensor:
         """Compute loss for a batch of data
         Args:
             batch: dict of data
+            model: HookedTransformer form TransformerLens to extract representations from
         Returns:
             loss: loss for the batch
         """
@@ -1796,10 +1813,12 @@ class TokenMatchingNER(NERmodel):
             return_tensors="pt",
             truncation=True,
         )
-        tokens = inputs["input_ids"].cuda()
-        attn_mask = inputs["attention_mask"].cuda()
+        tokens = to_device(inputs["input_ids"], model.device)
+        attn_mask = to_device(inputs["attention_mask"], model.device)
 
-        dilate_entities = self.dilate_entities if hasattr(self, "dilate_entities") else None
+        dilate_entities = (
+            self.dilate_entities if hasattr(self, "dilate_entities") else None
+        )
 
         # get the query and key scores from the model with shape (len(layers), batch, seq, n_heads, dim_head)
         Q, K, reps = self.get_QK_reps(
@@ -1826,7 +1845,7 @@ class TokenMatchingNER(NERmodel):
 
         return loss
 
-    def train(
+    def manual_train(
         self,
         train_loader,
         val_loader,
@@ -1912,8 +1931,9 @@ class TokenMatchingNER(NERmodel):
         gc.collect()
         torch.cuda.empty_cache()
 
-        hist = train(
+        hist = train_lightning(
             self,
+            model=train_loader.dataset.model,
             train_loader=train_loader,
             val_loader=val_loader,
             optimizer=optimizer,
@@ -1928,7 +1948,6 @@ class TokenMatchingNER(NERmodel):
             n_val=n_val,
             train_step_args={
                 "model": train_loader.dataset.model,
-
             },
             **kwargs,
         )
@@ -1947,7 +1966,7 @@ class CLQK_NER(TokenMatchingNER):
     layers: Param[List[int]] = field(default=[0], ignore_default=True)
     """List of layers to extract the query and key scores from, layer will be set as max(layers)"""
 
-    #overrides from parent class
+    # overrides from parent class
     need_hookedtransformer: bool = True
     """This model needs a HookedTransformer to extract query and key scores"""
 
@@ -1958,16 +1977,18 @@ class CLQK_NER(TokenMatchingNER):
 
         super().__initialize__()
 
-        try :
-            from transformer_lens import HookedTransformer
+        try:
             config = convert_hf_model_config(self.llm_name)
             self.qk_dim = config["d_head"]
             self.n_heads = config["n_heads"]
             self.n_kv_heads = config.get("n_key_value_heads", self.n_heads)
-            logging.info(f"Found config for model {self.llm_name}: qk_dim {self.qk_dim}, n_heads {self.n_heads}, n_kv_heads {self.n_kv_heads}")
+            logging.info(
+                f"Found config for model {self.llm_name}: qk_dim {self.qk_dim}, n_heads {self.n_heads}, n_kv_heads {self.n_kv_heads}"
+            )
         except Exception as e:
-            raise ValueError(f"Could not load model config for {self.llm_name}, make sure the model name is correct and the model is supported. Original error: {e}")
-
+            raise ValueError(
+                f"Could not load model config for {self.llm_name}, make sure the model name is correct and the model is supported. Original error: {e}"
+            )
 
         # overrides parameters definition
         self.W_Q = nn.Parameter(
@@ -1978,10 +1999,12 @@ class CLQK_NER(TokenMatchingNER):
         )  # shape (model_dim, rank * n_heads)
         self.classifier = ReprClassifier(self.model_dim)
 
-    def get_QK_reps(self,
-                    tokens: torch.Tensor,
-                    model: HookedTransformer,
-                    attn_mask: Optional[torch.Tensor] = None) -> Tuple[
+    def get_QK_reps(
+        self,
+        tokens: torch.Tensor,
+        model: HookedTransformer | PreTrainedModel,
+        attn_mask: Optional[torch.Tensor] = None,
+    ) -> Tuple[
         Float[torch.Tensor, "batch seq rank"],
         Float[torch.Tensor, "batch seq rank"],
         Float[torch.Tensor, "batch seq dim"],
@@ -2013,7 +2036,11 @@ class CLQK_NER(TokenMatchingNER):
         return (llm_q @ self.W_Q), (llm_k @ self.W_K), reps
 
     def training_step(
-        self, batch: dict, model: HookedTransformer, lasso_reg: Optional[float] = 0
+        self,
+        batch: dict,
+        model: HookedTransformer | PreTrainedModel,
+        lasso_reg: Optional[float] = 0,
+        **kwargs,
     ) -> torch.Tensor:
         """Compute loss for a batch of data
         Args:
@@ -2028,8 +2055,8 @@ class CLQK_NER(TokenMatchingNER):
             padding_side="right",
             return_tensors="pt",
         )
-        tokens = inputs["input_ids"].cuda()
-        attn_mask = inputs["attention_mask"].cuda()
+        tokens = inputs["input_ids"].to(self.device)
+        attn_mask = inputs["attention_mask"].to(self.device)
 
         # get the query and key scores from the model with shape (len(layers), batch, seq, n_heads, dim_head)
         Q, K, reps = self.get_QK_reps(
@@ -2090,14 +2117,17 @@ class AttentionLCNER(TokenMatchingNER):
         self.model_dim = self.dim
         self.layer = max(self.layers)
 
-        #retrieve model configuration to get number of heads
-        try :
-            from transformer_lens import HookedTransformer
+        # retrieve model configuration to get number of heads
+        try:
             config = convert_hf_model_config(self.llm_name)
             self.n_heads = config["n_heads"]
-            logging.info(f"Found config for model {self.llm_name}: n_heads {self.n_heads}")
+            logging.info(
+                f"Found config for model {self.llm_name}: n_heads {self.n_heads}"
+            )
         except Exception as e:
-            raise ValueError(f"Could not load model config for {self.llm_name}, make sure the model name is correct and the model is supported. Original error: {e}")
+            raise ValueError(
+                f"Could not load model config for {self.llm_name}, make sure the model name is correct and the model is supported. Original error: {e}"
+            )
 
         # overrides parameters definition
         self.cl_attn = nn.Linear(len(self.layers) * self.n_heads, 1, bias=True)
@@ -2112,26 +2142,32 @@ class AttentionLCNER(TokenMatchingNER):
 
     def extra_repr(self) -> str:
         TM_repr = super().extra_repr()
-        #remove rank=... from parent class
+        # remove rank=... from parent class
         keys_to_remove = ["rank", "use_cosine"]
-        TM_repr = ", ".join([x for x in TM_repr.split(", ") if not x.startswith(tuple(keys_to_remove))])
+        TM_repr = ", ".join(
+            [x for x in TM_repr.split(", ") if not x.startswith(tuple(keys_to_remove))]
+        )
         return f"{TM_repr}, layers={self.layers}, normalize_scores={self.normalize_scores}, method={self.method}"
 
     def attn_forward(
         self,
         attn_scores: Float[torch.Tensor, "batch layer n_heads seq seq"],
         return_mask: bool = False,
-    ) -> Tuple[Float[torch.Tensor, "batch seq seq"], Float[torch.Tensor, "batch seq seq"]]:
+    ) -> Tuple[
+        Float[torch.Tensor, "batch seq seq"], Float[torch.Tensor, "batch seq seq"]
+    ]:
         """Overrides the attn_forward method to use the attention scores from the LLM.
         Args:
             attn_scores: tensor of shape (batch, layer, n_heads, seq, seq) with the attention scores from the LLM
         Returns:
             output: tensor of shape (batch, seq, seq) with the combined attention scores
         """
-        #rearrange to (batch, seq, seq, n_heads * layers)
+        # rearrange to (batch, seq, seq, n_heads * layers)
         attn_scores = rearrange(attn_scores, "b l h i j -> b i j (h l)")
         # filter nan values from attn scores
-        attn_scores = torch.where(torch.isfinite(attn_scores), attn_scores, torch.zeros_like(attn_scores))
+        attn_scores = torch.where(
+            torch.isfinite(attn_scores), attn_scores, torch.zeros_like(attn_scores)
+        )
 
         if self.normalize_scores in ["logits", "softmax"]:
             pass  # keep raw logits or already softmaxed values
@@ -2142,7 +2178,7 @@ class AttentionLCNER(TokenMatchingNER):
         else:
             raise ValueError(f"Unknown normalization method {self.normalize_scores}")
         # create mask and fit to batched scores
-        b, seq, _ , _ = attn_scores.size()
+        b, seq, _, _ = attn_scores.size()
         b_mask = self.get_mask(seq).expand(b, -1, -1).to(attn_scores.device)
         output = self.cl_attn(attn_scores).squeeze(-1)
 
@@ -2154,7 +2190,7 @@ class AttentionLCNER(TokenMatchingNER):
     def forward(
         self,
         tokens: Float[torch.Tensor, "batch seq"],
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
         return_logits: bool = False,
         return_mask: bool = False,
         **kwargs: Any,
@@ -2176,7 +2212,9 @@ class AttentionLCNER(TokenMatchingNER):
             tokens=tokens,
         )  # shape (batch, len(layers), n_heads, seq, seq)
 
-        scores, b_mask = self.attn_forward(llm_attn_scores, return_mask=True)  # shape (batch, seq, seq)
+        scores, b_mask = self.attn_forward(
+            llm_attn_scores, return_mask=True
+        )  # shape (batch, seq, seq)
         end_ent = self.classifier(reps)  # shape (batch, seq)
 
         span_logits = self.combine_scores(
@@ -2195,9 +2233,12 @@ class AttentionLCNER(TokenMatchingNER):
         else:
             return span_logits
 
-
     def training_step(
-        self, batch: dict, model: HookedTransformer, lasso_reg: Optional[float] = 0
+        self,
+        batch: dict,
+        model: HookedTransformer | PreTrainedModel,
+        lasso_reg: Optional[float] = 0,
+        **kwargs,
     ) -> torch.Tensor:
         """Compute loss for a batch of data
         Args:
@@ -2212,8 +2253,8 @@ class AttentionLCNER(TokenMatchingNER):
             padding_side="right",
             return_tensors="pt",
         )
-        tokens = inputs["input_ids"].cuda()
-        attn_mask = inputs["attention_mask"].cuda()
+        tokens = inputs["input_ids"].to(self.device)
+        attn_mask = inputs["attention_mask"].to(self.device)
 
         b, seq = tokens.size()
 
@@ -2225,15 +2266,15 @@ class AttentionLCNER(TokenMatchingNER):
             attn_mask=attn_mask,
         )  # shape (batch, len(layers), n_heads, seq, seq)
 
-        attn_scores, b_mask = self.attn_forward(llm_attn_scores, return_mask=True)  # both shape (batch, seq, seq)
+        attn_scores, b_mask = self.attn_forward(
+            llm_attn_scores, return_mask=True
+        )  # both shape (batch, seq, seq)
 
         end_ent_scores = self.classifier(reps)  # shape (batch, seq)
-
 
         span_logits = self.combine_scores(
             attn_scores, end_ent_scores, self.method, b_mask
         )  # shape (batch, seq, seq)
-
 
         # reshape to (batch, seq, seq) putting the end_ent_scores on the diagonal and add to scores
         loss = self.token_matching_loss(
@@ -2244,7 +2285,7 @@ class AttentionLCNER(TokenMatchingNER):
             end_ent_scores=end_ent_scores,
             mask=b_mask,
             method=self.method,
-            pos_weight= 0 if not hasattr(self, "pos_weight") else self.pos_weight,
+            pos_weight=0 if not hasattr(self, "pos_weight") else self.pos_weight,
         )
 
         if lasso_reg:
@@ -2252,9 +2293,6 @@ class AttentionLCNER(TokenMatchingNER):
             loss += lasso_reg * (torch.norm(self.W_Q, 1) + torch.norm(self.W_K, 1))
 
         return loss
-
-
-
 
 
 ###### CNN NER MODEL ######
@@ -2297,7 +2335,9 @@ class AttentionCNN_NER(NERmodel):
     """Whether to use a sliding window for the attention scores, default 0 (no sliding window)"""
 
     # CNN config
-    kernel_padding: Param[List[int]] = field(default=DEFAULT_KERNEL_PADDING, ignore_default=True)  # (left right top bottom)
+    kernel_padding: Param[List[int]] = field(
+        default=DEFAULT_KERNEL_PADDING, ignore_default=True
+    )  # (left right top bottom)
     """ Kernel padding for the CNN : (left, right, top, bottom)"""
     method: Param[str] = field(default=CNN_METHODS.LOGITS, ignore_default=True)
     """Logits aggregation method"""
@@ -2349,9 +2389,7 @@ class AttentionCNN_NER(NERmodel):
             self.init_kernel_mean()
 
     def init_kernel_mean(self):
-        logging.info(
-            f"Initializing scores Aggregator with equal weights (mean pooling)"
-        )
+        logging.info("Initializing scores Aggregator with equal weights (mean pooling)")
         self.scoresKernel.data.fill_((-1 / (self.k_size[0] * self.k_size[1])))
         self.probeKernel.data.fill_(-1 / self.k_size[1])
 
@@ -2442,13 +2480,13 @@ class AttentionCNN_NER(NERmodel):
         with torch.no_grad():
             reps = utils.compute_to_layer(
                 model, self.layer, tokens, dtype=self.dtype
-            ).cuda()
+            ).to(self.device)
         return reps
 
     def forward(
         self,
         tokens: Float[torch.Tensor, "batch seq"],
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
         return_logits: bool = False,
         scores_mask: torch.Tensor = None,
         probe_mask: torch.Tensor = None,
@@ -2636,7 +2674,11 @@ class AttentionCNN_NER(NERmodel):
             return output
 
     def training_step(
-        self, batch: dict, model: HookedTransformer, lasso_reg: float = 0
+        self,
+        batch: dict,
+        model: HookedTransformer | PreTrainedModel,
+        lasso_reg: float = 0,
+        **kwargs,
     ) -> torch.Tensor:
         """Compute loss for a batch of data
         Args:
@@ -2672,14 +2714,14 @@ class AttentionCNN_NER(NERmodel):
             raise ValueError("stop")
 
         texts = batch["text"]
-        tags = batch["token_tags"].float().cuda()
-        patterns = batch["pattern"].cuda()  # tensor shape (batch, seq, seq)
+        tags = batch["token_tags"].float().to(self.device)
+        patterns = batch["pattern"].to(self.device)  # tensor shape (batch, seq, seq)
         b_size = patterns.size(0)
         inputs = model.tokenizer(
             texts, padding=True, padding_side="right", return_tensors="pt"
         )
-        tokens = inputs["input_ids"].cuda()
-        attn_mask = inputs['attention_mask'].cuda()
+        tokens = inputs["input_ids"].to(self.device)
+        attn_mask = inputs["attention_mask"].to(self.device)
         padded = tokens == model.tokenizer.pad_token_id  # shape (batch, seq)
         padded_mask = padded.unsqueeze(1) | padded.unsqueeze(
             2
@@ -2733,7 +2775,7 @@ class AttentionCNN_NER(NERmodel):
         # debug_train()
         return loss
 
-    def train(
+    def manual_train(
         self,
         train_loader,
         val_loader,
@@ -2831,7 +2873,7 @@ class AttentionCNN_NER(NERmodel):
                          - Sliding Window {self.attn.sliding_window}... "
         )
 
-        hist = train(
+        hist = train_lightning(
             self,
             train_loader=train_loader,
             val_loader=val_loader,

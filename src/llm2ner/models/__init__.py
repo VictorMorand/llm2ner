@@ -1,6 +1,7 @@
 from .model import (
     NERmodel,
-    train, 
+    manual_train,
+    train_lightning,
     EPS,
     FILL_NEG_LOGITS,
 )
@@ -9,7 +10,7 @@ from .TokenMatching import (
     CLQK_NER,
     AttentionLCNER,
     AttentionCNN_NER,
-    CNN_METHODS, 
+    CNN_METHODS,
     DEFAULT_KERNEL_PADDING,
 )
 from .tommer import ToMMeR

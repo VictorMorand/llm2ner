@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import torch
 from tqdm import tqdm
-import os
 
 pd.set_option("display.max_rows", None)
 pd.set_option("display.max_columns", None)
@@ -285,7 +284,7 @@ def decode_greedy(
       1) list all spans with score > min_score
       2) sort by score desc; tie-break by length (desc if prefer_long else asc), then by (start,end)
       3) pick spans that don't overlap with those already chosen
-    Args: 
+    Args:
         S: [n,n] array of span scores
         min_score: minimum score to consider a span
         prefer_long: if True, prefer longer spans in tie-breaks; else prefer shorter spans
@@ -314,7 +313,7 @@ def decode_greedy(
 
 
 def line_col_greedy(span_probs, threshold=0.5):
-    
+
     # (1) Row-wise argmax
     max_lines = np.argmax(span_probs, axis=1)  # indices of max per row
     mask_rows = np.zeros_like(span_probs, dtype=bool)
@@ -397,12 +396,12 @@ def decode_greedy_nested(S: np.ndarray, min_score: float = 0.0, prefer_long: boo
 
 # ---------------- Evaluation ----------------
 METHODS = [
-    "flat", 
-    "well_nested", 
-    "disc_cont", 
-    "threshold", 
-    "greedy", 
-    "greedy_nested", 
+    "flat",
+    "well_nested",
+    "disc_cont",
+    "threshold",
+    "greedy",
+    "greedy_nested",
     "line_col_greedy"
     ]
 
@@ -457,7 +456,7 @@ def decode(
         spans = line_col_greedy(S, threshold=threshold)
     else:
         raise ValueError(f"Unknown decoding strategy: {decoding_strategy}")
-    
+
     return spans
 
 
@@ -480,7 +479,7 @@ def eval_dataset(
             item, min_score, gap_penalty, score_threshold
         )
         L = {method: [(s.start, s.end) for s in decoded_all[method]] for method in METHODS}
-        
+
         # Count overlaps per algorithm
         for a in L:
             overlaps[a] += count_overlaps(L[a])

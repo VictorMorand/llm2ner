@@ -3,7 +3,7 @@ This module contains heuristics to compute for the llm2ner models
 """
 import numpy as np
 import torch
-from jaxtyping import Float, Bool, Int
+from jaxtyping import Float, Int
 DEFAULT_THRESHOLD = 0 # threshold for attention LOGIT scores in heuristic
 
 
@@ -17,7 +17,7 @@ DEFAULT_THRESHOLD = 0 # threshold for attention LOGIT scores in heuristic
 ########### first MODE HEURISTICS ###########
 def NER_tags_from_first_scores(
         scores: torch.Tensor, # shape ( seq, seq)
-        max_ent_length: int, 
+        max_ent_length: int,
         threshold:float) -> torch.Tensor:
     """Heuristic to build NER tags from attention scores
     Args:
@@ -30,7 +30,7 @@ def NER_tags_from_first_scores(
     # print(scores.shape)
     seq = scores.size(-1)
     ner_tags = torch.zeros(seq, dtype=torch.int)
-    
+
     for i in range(seq):
         matches = scores[i,:]
         sorted_idx = torch.argsort(matches, descending=True)
@@ -60,10 +60,10 @@ def NER_tags_from_first_scores(
 @torch.no_grad()
 def NER_tags_from_firstonly_scores_sum(
         scores: torch.Tensor, # shape (1, seq, seq)
-        max_ent_length: int, 
+        max_ent_length: int,
         threshold:float) -> torch.Tensor:
-    """Heuristic to build NER tags from attention scores in first mode, 
-    - CAUSAL ONLY 
+    """Heuristic to build NER tags from attention scores in first mode,
+    - CAUSAL ONLY
     - mask bos token
     Args:
         scores (1, seq, seq): attention scores between all pairs of tokens
@@ -73,7 +73,7 @@ def NER_tags_from_firstonly_scores_sum(
         ner_tags (seq): NER tags for each token
     """
     if threshold is None: threshold = DEFAULT_THRESHOLD
-  
+
     # print(scores.shape)
     seq = scores.size(-1)
     ner_tags = torch.zeros(seq, dtype=torch.int)
@@ -84,9 +84,9 @@ def NER_tags_from_firstonly_scores_sum(
         min_idx = max(1, i - max_ent_length) # consider only spans in eligible range WITOUT BOS TOKEN
 
         if max(scores[0,i,min_idx:i+1]) > threshold: #no entity
-            sum_scores = scores[0,min_idx:i+1,min_idx:i+1].sum(dim=0) #sum on each column 
+            sum_scores = scores[0,min_idx:i+1,min_idx:i+1].sum(dim=0) #sum on each column
             # sort first token candidates
-            sorted_idx = torch.argsort(sum_scores, descending=True).detach().cpu().tolist() 
+            sorted_idx = torch.argsort(sum_scores, descending=True).detach().cpu().tolist()
             # print(i, sorted_idx, sum_scores)
             first_idx = sorted_idx.pop(0)
             while len(sorted_idx): # we still have candidates
@@ -104,10 +104,10 @@ def NER_tags_from_firstonly_scores_sum(
 
 def NER_tags_from_firstonly_scores(
         scores: torch.Tensor, # shape (1, seq, seq)
-        max_ent_length: int, 
+        max_ent_length: int,
         threshold:float = DEFAULT_THRESHOLD) -> torch.Tensor:
-    """Heuristic to build NER tags from attention scores in first mode, 
-    - CAUSAL ONLY 
+    """Heuristic to build NER tags from attention scores in first mode,
+    - CAUSAL ONLY
     - mask bos token
     Args:
         scores (1, seq, seq): attention scores between all pairs of tokens
@@ -123,7 +123,7 @@ def NER_tags_from_firstonly_scores(
     max_cum_scores_indx = torch.argmax(cum_scores, dim=0) # (seq)
     _, candidates = torch.where( cum_scores[max_cum_scores_indx] > threshold ) # (seq)
     # we start from the end of the sequence
-    for idx in candidates.tolist()[::-1]: 
+    for idx in candidates.tolist()[::-1]:
         idx_last = max_cum_scores_indx[idx]
         ner_tags[idx] = 1
         ner_tags[idx+1 : idx_last +1] = 2
@@ -134,10 +134,10 @@ def NER_tags_from_first_probe(
         scores: Float[torch.Tensor, "seq seq"],
         end_ent: Float[torch.Tensor, "seq"],
         threshold:float,
-        max_ent_length: int, 
+        max_ent_length: int,
         ) -> torch.Tensor:
-    """Heuristic to build NER tags from attention scores in first mode, 
-    - CAUSAL ONLY 
+    """Heuristic to build NER tags from attention scores in first mode,
+    - CAUSAL ONLY
     - mask bos token
     Args:
         scores (1, seq, seq): attention scores between all pairs of tokens
@@ -151,10 +151,10 @@ def NER_tags_from_first_probe(
     seq = scores.size(-1)
     ner_tags = torch.zeros(seq, dtype=torch.int)
     cum_scores = scores.view(seq,seq).cumsum(dim=0) # (seq , seq)
-    
+
     # print(cum_scores.shape)
     # print(end_ent)
-    
+
     # import matplotlib.pyplot as plt
     # plt.imshow(cum_scores)
     # plt.colorbar()
@@ -162,19 +162,19 @@ def NER_tags_from_first_probe(
 
     candidates = torch.where( end_ent > threshold )[0] # (seq)
     # we start from the end of the sequence
-    for idx_last in candidates.tolist()[::-1]: 
+    for idx_last in candidates.tolist()[::-1]:
         min_idx = max(1, idx_last - max_ent_length) # consider only spans in eligible range WITOUT BOS TOKEN
         cand_scores = cum_scores[idx_last, min_idx:idx_last+1]
         cand_idx_first = torch.where(cand_scores > threshold)[0]
-        
-        if len(cand_idx_first) == 0: 
+
+        if len(cand_idx_first) == 0:
             continue #no entity
         else:
             idx_first = cand_idx_first[-1].item()
             idx_first += min_idx # we add min_idx to get the real index
             ner_tags[idx_first:idx_last+1] = 2
             ner_tags[idx_first] = 1
-        
+
     return ner_tags
 
 ########### LAST MODE HEURISTICS ###########
@@ -182,7 +182,7 @@ def NER_tags_from_first_probe(
 
 def NER_tags_from_last_scores(
         scores: torch.Tensor, # shape (1, seq, seq)
-        max_ent_length: int, 
+        max_ent_length: int,
         threshold:float) -> torch.Tensor:
     """Build NER tags from attention scores in last mode
     TODO: implement Nested, for now we keep only the widest span
@@ -219,7 +219,7 @@ def NER_tags_from_last_scores(
 
 def NER_tags_from_lastonly_scores(
         scores: Float[torch.Tensor, "seq seq"],
-        max_ent_length: int, 
+        max_ent_length: int,
         threshold:float) -> torch.Tensor:
     """Build NER tags from attention scores in last mode
     TODO: implement Nested, for now we keep only the widest span
@@ -248,7 +248,7 @@ def NER_tags_from_lastonly_scores(
 
 def NER_tags_from_block_scores(
         scores: torch.Tensor, # shape (1, seq, seq)
-        max_ent_length: int, 
+        max_ent_length: int,
         threshold:float,
         causal: bool = True,
         patience: int = 3
@@ -300,19 +300,19 @@ def NER_tags_from_block_scores(
                         wait += 1
                     if wait == patience:
                         break
-            else : 
+            else :
                 # without patience, we take the longest entity enven if their is a gap in cumulated attention scores
                 ent_length = np.argmax(sc) + 1
             # write found entity in tags, overwrite if another entity was found before
-            # enable nested entities if there are multiple 1s 
+            # enable nested entities if there are multiple 1s
             ner_tags[i-ent_length+1:i+1] = 2
             ner_tags[i-ent_length+1] = 1
     return ner_tags
 
 def NER_tags_from_blockonly_heuristic(
         scores: torch.Tensor, # shape (1, seq, seq)
-        max_ent_length: int, 
-        threshold:float, 
+        max_ent_length: int,
+        threshold:float,
         patience:int,
         causal:bool = True, ) -> torch.Tensor:
     """Build NER tags from attention scores in 'block_only' mode
@@ -330,7 +330,7 @@ def NER_tags_from_blockonly_heuristic(
     ner_tags = torch.zeros(seq, dtype=torch.int)
     i = seq - 1
     while i > 0: # for all tokens in the sequence in reverse order (except bos token)
-        if scores[0,i,i] < threshold:   
+        if scores[0,i,i] < threshold:
             # print(i, "nothing")
             i -= 1 #do nothing
         else: #we might be in an entity
@@ -351,7 +351,7 @@ def NER_tags_from_blockonly_heuristic(
                     break
             # print("found", b, i, sc )
             # write found entity (b,i) in tags, overwrite if another entity was found before
-            # enable nested entities if there are multiple 1s 
+            # enable nested entities if there are multiple 1s
             ner_tags[b] = 1
             ner_tags[b+1:i+1] = 2
             i = b - 1 # we go back to the beginning of the entity and continue
@@ -381,7 +381,7 @@ def NER_tags_from_blockonly_probe(
 
     i = seq - 1
     while i > 0: # for all tokens in the sequence in reverse order (except bos token)
-        if end_ent[i] < threshold:   
+        if end_ent[i] < threshold:
             i -= 1 #do nothing
         else: #we might be in an entity
             sc = []
@@ -401,9 +401,9 @@ def NER_tags_from_blockonly_probe(
                     break
             # print("found", b, i, sc )
             # write found entity (b,i) in tags, overwrite if another entity was found before
-            # enable nested entities if there are multiple 1s 
+            # enable nested entities if there are multiple 1s
             ner_tags[b] = 1
             ner_tags[b+1:i+1] = 2
             i = b - 1 # we go back to the beginning of the entity and continue
-    
+
     return ner_tags

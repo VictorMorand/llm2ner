@@ -1,15 +1,19 @@
-import os, json, logging, spacy, time
+import os
+import logging
+import spacy
+import time
 from spacy import displacy
 import torch
 from datetime import datetime
 import numpy as np
-from transformer_lens import HookedTransformer
 
 # display libs
 import plotly.graph_objects as go
 from IPython.display import display, HTML
 import ipywidgets as widgets
 from transformer_lens import HookedTransformer
+from transformers.modeling_utils import PreTrainedModel
+
 import circuitsvis as cv
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -19,7 +23,6 @@ from llm2ner.models import AttentionCNN_NER
 from llm2ner.models.model import (
     NERmodel,
     count_perf,
-    count_perf_tags,
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -57,51 +60,83 @@ def display_entities(text, tokenizer, entities):
         else:
             doc.spans["sc"].append(span)
     # Display in notebook
-    return HTML(displacy.render(doc, style="span", options={"colors": {"PRED": "lightblue",}}, jupyter=False))
+    return HTML(
+        displacy.render(
+            doc,
+            style="span",
+            options={
+                "colors": {
+                    "PRED": "lightblue",
+                }
+            },
+            jupyter=False,
+        )
+    )
 
 
-def display_compare_entities(text, tokenizer, predicted_entities, gold_entities):
+def display_compare_entities(
+    text,
+    tokenizer,
+    predicted_entities=None,
+    gold_entities=None,
+    save_path=None,
+    return_html=False,
+    display_html=True,
+    jupyter=False,
+):
     """Uses Displacy to show both predicted and gold entity spans for comparison.
-    
+
     Args:
-        - text: original sentence
-        - tokenizer: tokenizer from ToMMeR
-        - predicted_entities: predicted entities (list of (start, end) tuples)
-        - gold_entities: ground truth entities (list of dicts with 'pos' key containing (start_char, end_char))
-    
+        text: original sentence
+        tokenizer: tokenizer from ToMMeR
+        predicted_entities: predicted entities (list of (start, end) tuples)
+        gold_entities: ground truth entities (list of dicts with 'pos' key containing (start_char, end_char))
+        save_path: optional path to save the rendered HTML
+        return_html: if True, return the raw HTML string
+        display_html: if True, display the rendered HTML in notebook environments
+        jupyter: passed to displacy.render
+
     Returns:
-        displacy HTML rendering
+        HTML string by default, optionally displays it in notebooks.
     """
-    from llm2ner.results import count_perf
-    
+    if predicted_entities is None:
+        predicted_entities = []
+    if gold_entities is None:
+        gold_entities = []
+
     # Get token offsets for character-level mapping
     encoding = tokenizer(text, return_offsets_mapping=True, return_tensors="pt")
     offsets = encoding["offset_mapping"][0]  # shape: (num_tokens, 2)
-    
+
     # Initialize spaCy
     nlp = spacy.blank("en")
     doc = nlp(text)
     char_spans = []
-    
+
     # Add gold entities
     for ent in gold_entities:
-        if isinstance(ent, dict) and 'pos' in ent:
+        if isinstance(ent, dict) and "pos" in ent:
             start_char, end_char = ent["pos"]
         else:
             # Assume it's already a (start, end) tuple
             start_char, end_char = ent
         char_spans.append((start_char, end_char, "GOLD"))
-    
+
     # Add predicted entities
-    for b, e in predicted_entities[0] if isinstance(predicted_entities[0], list) else predicted_entities:
-        if b < len(offsets) and e < len(offsets):
-            start_char = offsets[b][0].item()
-            end_char = offsets[e][1].item()
-            # Handle leading spaces
-            if start_char < len(text) and text[start_char] == " ":
-                start_char += 1
-            char_spans.append((start_char, end_char, "PRED"))
-    
+    if len(predicted_entities) > 0:
+        for b, e in (
+            predicted_entities[0]
+            if isinstance(predicted_entities[0], list)
+            else predicted_entities
+        ):
+            if b < len(offsets) and e < len(offsets):
+                start_char = offsets[b][0].item()
+                end_char = offsets[e][1].item()
+                # Handle leading spaces
+                if start_char < len(text) and text[start_char] == " ":
+                    start_char += 1
+                char_spans.append((start_char, end_char, "PRED"))
+
     # Convert to spaCy spans
     doc.spans["sc"] = []
     for start, end, label in char_spans:
@@ -110,43 +145,59 @@ def display_compare_entities(text, tokenizer, predicted_entities, gold_entities)
             print(f"⚠️ Could not align span ({start}, {end}): '{text[start:end]}'")
         else:
             doc.spans["sc"].append(span)
-    
+
     # Custom colors
     colors = {
         "PRED": "lightblue",
         "GOLD": "gold",
     }
 
-    # Display in notebook
-    return displacy.render(doc, style="span", options={"colors": colors}, jupyter=True)
-
-
-def item_inference_html(model, item:dict, outputs:dict, save_html=True, output_dir="plots", ):
-    """Fancy Display of outputs from test_inference"""
-     
-    text, str_tokens, gt_tags = (
-        item["text"],
-        item["str_tokens"],
-        torch.tensor(item["token_tags"], dtype=torch.int32),
+    render_html = displacy.render(
+        doc, style="span", options={"colors": colors}, jupyter=jupyter
     )
+    if save_path is not None:
+        with open(save_path, "w", encoding="utf-8") as f:
+            f.write(render_html)
+
+    if display_html:
+        display(HTML(render_html))
+
+    if return_html:
+        return render_html
+
+    return render_html
+
+
+def item_inference_html(
+    model,
+    item: dict,
+    outputs: dict,
+    save_html=True,
+    output_dir="plots",
+):
+    """Fancy Display of outputs from test_inference"""
+
+    text = item["text"]
     entities = outputs["entities"]
     tp, fp, tot = count_perf(entities, item["ent_pos"])
     print(f"- True pos: {tp} / {tot} \n- False pos: {fp} ")
 
     # === ENTITY VISUALIZATION ===
     # Use display_compare_entities for visualization
-    html_content = display_compare_entities(text, model.tokenizer, entities, item["entities"])
-    
+    html_content = display_compare_entities(
+        text, model.tokenizer, entities, item["entities"]
+    )
+
     if save_html:
         # Create output directory if it doesn't exist
         os.makedirs(output_dir, exist_ok=True)
-        
+
         # Generate filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        item_id = item.get('id', 'unknown')
+        item_id = item.get("id", "unknown")
         filename = f"ner_viz_{item_id}_{timestamp}.html"
         filepath = os.path.join(output_dir, filename)
-        
+
         # Enhanced HTML template for better printing
         enhanced_html = f"""
 <!DOCTYPE html>
@@ -211,15 +262,15 @@ def item_inference_html(model, item:dict, outputs:dict, save_html=True, output_d
         <h1>Named Entity Recognition Visualization</h1>
         <p><strong>Item ID:</strong> {item_id} | <strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
     </div>
-    
+
     <div class="info">
         <h3>Performance Summary</h3>
         <p><strong>True Positives:</strong> {tp} / {tot} | <strong>False Positives:</strong> {fp}</p>
         <p><strong>Predicted Entities:</strong> {len(entities)} | <strong>Gold Entities:</strong> {len(item["entities"])}</p>
     </div>
-    
+
     {html_content}
-    
+
     <div class="legend">
         <h3>Legend</h3>
         <div class="legend-item">
@@ -234,22 +285,23 @@ def item_inference_html(model, item:dict, outputs:dict, save_html=True, output_d
 </body>
 </html>
         """
-        
+
         # Save HTML file
-        with open(filepath, 'w', encoding='utf-8') as f:
+        with open(filepath, "w", encoding="utf-8") as f:
             f.write(enhanced_html)
-        
+
         print(f"\n📄 HTML visualization saved: {filepath}")
-        
+
         return {"html_path": filepath}
-    
+
     return outputs
+
 
 ############## interactive Inference ##############
 @torch.no_grad()
 def test_inference(
     ner_model: NERmodel,
-    model: HookedTransformer,
+    model: HookedTransformer | PreTrainedModel,
     item: dict,
     decoding_strategy: str = "threshold",
     threshold: float = 0.5,
@@ -262,7 +314,7 @@ def test_inference(
     """Test inference on a single item
     Args:
         ner_model: TokenMatchingNER, model to test
-        model: HookedTransformer, hooked model
+        model: HookedTransformer | PreTrainedModel, hooked model
         decoding_strategy: str, decoding strategy to use, see decoders.py for options
         threshold: float, threshold for the decoding strategy
         normalize: bool, whether to normalize the attention scores for visualization
@@ -297,7 +349,7 @@ def test_inference(
         Q, K, reps = ner_model.get_QK_reps(
             tokens, model, attn_mask=attn_mask
         )  # shape (batch, seq, rank) , " , (batch, seq, dim)
-        
+
         end_ent = ner_model.classifier(reps).view(-1).detach()
         attn_scores, mask = ner_model.attn_forward(
             Q, K, return_mask=True, return_logits=False
@@ -312,8 +364,10 @@ def test_inference(
             threshold=threshold,
             attn_mask=attn_mask,
         )
-        
-        str_entities = [f"'{''.join(str_tokens[b:e+1])}' {(b,e)}" for b, e in entities[0]]
+
+        str_entities = [
+            f"'{''.join(str_tokens[b:e+1])}' {(b,e)}" for b, e in entities[0]
+        ]
         if verbose:
             print(f"Found {len(entities[0])} entities: {', '.join(str_entities)}")
 
@@ -339,50 +393,50 @@ def test_inference(
         else:
             n_attn_scores = attn_scores
             n_scores = scores
-        
-       
+
         tp, fp, tot = count_perf(entities, item["ent_pos"])
         print(f"- True pos: {tp} / {tot} \n- False pos: {fp} ")
 
         # display results
-        display_compare_entities(
-            text, model.tokenizer, entities, item["entities"]
-        )
+        display_compare_entities(text, model.tokenizer, entities, item["entities"])
         # Transform to RenderedHTML
         if show_values:
             display(
                 cv.tokens.colored_tokens_multi(
                     tokens=str_tokens,
-                    values=torch.vstack([ls for ls in (tags, gt_tags, end_ent.cpu())]).T,
+                    values=torch.vstack(
+                        [ls for ls in (tags, gt_tags, end_ent.cpu())]
+                    ).T,
                     labels=["Pred Tags", "ground Truth", "end probe"],
                 )
             )
 
         if len(item["str_tokens"]) < 50 and show_attn:
             display(
-            cv.attention.attention_heads(
-                attention=torch.vstack(
-                    (
-                        n_scores.unsqueeze(0),
-                        n_attn_scores.unsqueeze(0),
-                        mask.unsqueeze(0),
-                    )
-                ),
-                tokens=item["str_tokens"],
-                attention_head_names=["span Scores", "Attn Scores", "mask"],
-                mask_upper_tri=True,
-                max_value=1,
-                min_value=-1,
+                cv.attention.attention_heads(
+                    attention=torch.vstack(
+                        (
+                            n_scores.unsqueeze(0),
+                            n_attn_scores.unsqueeze(0),
+                            mask.unsqueeze(0),
+                        )
+                    ),
+                    tokens=item["str_tokens"],
+                    attention_head_names=["span Scores", "Attn Scores", "mask"],
+                    mask_upper_tri=True,
+                    max_value=1,
+                    min_value=-1,
                 )
             )
         else:
-            if show_attn: print("Sequence too long to display attention scores")
+            if show_attn:
+                print("Sequence too long to display attention scores")
 
         return outputs | {
-            "tags":tags,
-            "scores":scores,
-            "end_ent":end_ent,
-            "entities":entities,
+            "tags": tags,
+            "scores": scores,
+            "end_ent": end_ent,
+            "entities": entities,
         }
 
     elif model_type == "AttentionLCNER":
@@ -396,7 +450,9 @@ def test_inference(
             attn_mask=attn_mask,
         )  # shape (batch, len(layers), n_heads, seq, seq)
 
-        attn_scores, mask = ner_model.attn_forward(llm_attn_scores, return_mask=True)  # shape (batch, seq, seq)
+        attn_scores, mask = ner_model.attn_forward(
+            llm_attn_scores, return_mask=True
+        )  # shape (batch, seq, seq)
         end_ent = ner_model.classifier(reps)  # shape (batch, seq)
 
         entities = ner_model.infer_entities(
@@ -406,17 +462,17 @@ def test_inference(
             threshold=threshold,
             attn_mask=attn_mask,
         )
-        
-        str_entities = [f"'{''.join(str_tokens[b:e+1])}' {(b,e)}" for b, e in entities[0]]
+
+        str_entities = [
+            f"'{''.join(str_tokens[b:e+1])}' {(b,e)}" for b, e in entities[0]
+        ]
         print(f"Found {len(entities[0])} entities: {', '.join(str_entities)}")
 
         tags = ner_model.get_tags(entities[0], seq).cpu()
 
-        scores = (
-            ner_model.forward(
-                tokens, model, attn_mask=attn_mask, return_logits=return_logits
-            ).detach()
-        )
+        scores = ner_model.forward(
+            tokens, model, attn_mask=attn_mask, return_logits=return_logits
+        ).detach()
 
         if return_logits and normalize:
 
@@ -438,26 +494,26 @@ def test_inference(
                 labels=["Pred Tags", "ground Truth", "end probe"],
             )
         )
-        
+
         print(n_scores.shape, n_attn_scores.shape, mask.shape)
         tp, fp, tot = count_perf(entities, item["ent_pos"])
         print(f"- True pos: {tp} / {tot} \n- False pos: {fp} ")
 
         if len(item["str_tokens"]) < 50:
             display(
-            cv.attention.attention_heads(
-                attention=torch.vstack(
-                    (
-                        n_scores,
-                        n_attn_scores,
-                        mask,
-                    )
-                ),
-                tokens=item["str_tokens"],
-                attention_head_names=["span Scores", "Attn Scores", "mask"],
-                mask_upper_tri=True,
-                max_value=1,
-                min_value=-1,
+                cv.attention.attention_heads(
+                    attention=torch.vstack(
+                        (
+                            n_scores,
+                            n_attn_scores,
+                            mask,
+                        )
+                    ),
+                    tokens=item["str_tokens"],
+                    attention_head_names=["span Scores", "Attn Scores", "mask"],
+                    mask_upper_tri=True,
+                    max_value=1,
+                    min_value=-1,
                 )
             )
         else:
@@ -514,10 +570,10 @@ def test_inference(
             )
         )
         return outputs | {
-            "tags":tags,
-            "scores":scores,
-            "mask":mask,
-            "entities":entities,
+            "tags": tags,
+            "scores": scores,
+            "mask": mask,
+            "entities": entities,
         }
 
     elif model_type == "AttentionCNN_NER":
@@ -539,7 +595,7 @@ def test_inference(
 
         if normalize:
             # normalize attention scores
-            logging.info(f"Normalizing logits for visualization")
+            logging.info("Normalizing logits for visualization")
             max_attn_scores = attn_scores[mask].abs().max()
             max_scores = scores[mask].max()
             print(f"div by max abs attn scores: {max_attn_scores}")
@@ -576,12 +632,12 @@ def test_inference(
         )
 
         return outputs | {
-            "tags":tags,
-            "attn_scores":attn_scores,
-            "end_ent":end_ent,
-            "scores":scores,
-            "mask":mask,
-            "entities":entities,
+            "tags": tags,
+            "attn_scores": attn_scores,
+            "end_ent": end_ent,
+            "scores": scores,
+            "mask": mask,
+            "entities": entities,
         }
 
     elif model_type == "NERCmodel":
@@ -594,9 +650,6 @@ def test_inference(
             return_logits=False,
         )
         classes = classes.view(-1).detach().cpu().numpy()
-        gt_entities = item["entities"]
-        gt_pos = [ent["tok_pos"] for ent in gt_entities]
-        gt_classes = [ent["class"] for ent in gt_entities]
 
         tags = ner_model.infer_tags(tokens, model, attn_mask=attn_mask)
         assert (
@@ -623,11 +676,12 @@ def test_inference(
         logging.warning(f"unknown model type : {model_type}")
         return None, None, None
 
+
 @torch.no_grad()
 def demo_inference(
     text: str,
     ner_model: NERmodel,
-    model: HookedTransformer,
+    model: HookedTransformer | PreTrainedModel,
     decoding_strategy: str = "threshold",
     threshold: float = 0.5,
     return_logits: bool = False,
@@ -667,10 +721,9 @@ def demo_inference(
             attn_mask=attn_mask,
         )
         tags = ner_model.get_tags(entities[0], seq).cpu()
-        
-        if verbose: 
+
+        if verbose:
             print(f"Found {len(entities[0])} entities: {entities[0]}")
-            
 
         scores = (
             ner_model.forward(
@@ -680,9 +733,7 @@ def demo_inference(
             .detach()
         )
         # First, show predicted spans.
-        display(
-            display_entities(text, model.tokenizer, entities)
-        )
+        display(display_entities(text, model.tokenizer, entities))
         if show_values:
             display(
                 cv.tokens.colored_tokens_multi(
@@ -695,7 +746,11 @@ def demo_inference(
             display(
                 cv.attention.attention_heads(
                     attention=torch.vstack(
-                        (scores.unsqueeze(0), attn_scores.unsqueeze(0), mask.unsqueeze(0))
+                        (
+                            scores.unsqueeze(0),
+                            attn_scores.unsqueeze(0),
+                            mask.unsqueeze(0),
+                        )
                     ),
                     tokens=str_tokens,
                     attention_head_names=["span Scores", "Attn Scores", "mask"],
@@ -1031,4 +1086,3 @@ def plot_patterns(ner_model: AttentionCNN_NER):
         )
     )
     plt.tight_layout()
-

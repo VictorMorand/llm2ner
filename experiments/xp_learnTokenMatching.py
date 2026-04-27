@@ -1,10 +1,12 @@
-import logging, os, sys, json
+import logging
+import os
+import json
 from shutil import rmtree
 from pathlib import Path
 from typing import List
 from attr import dataclass
 from experimaestro.experiments import ExperimentHelper, configuration
-from experimaestro import tag, tagspath, serialize, Task
+from experimaestro import tag, tagspath, Task
 from experimaestro.experiments.configuration import ConfigurationBase
 from experimaestro.launcherfinder import find_launcher
 
@@ -12,11 +14,11 @@ logging.basicConfig(level=logging.DEBUG)
 
 from llm2ner.models import NERmodel, TokenMatchingNER
 from llm2ner.tasks import LearnTokenMatching
-from llm2ner.classification import LearnZeroShotNER, NERCmodel
 from llm2ner.baselines.annotate_api import LLMannotation
 from llm2ner.utils import PathOutput
-from llm2ner.results import process_eval, add_agg_metrics
+from llm2ner.results import process_eval
 from llm2ner.data import compare_inferences, InferredDataset
+from xpm_torch.experiments.services import TensorboardService
 
 N_TASKS_LIMIT = 300
 
@@ -34,7 +36,10 @@ class ProcessedModel:
 
 
 def get_alias(task: Task):
-    alias = task.__xpmtype__.name().split(".")[-1] + f"_{tagspath(task)}_{task.jobpath.name}"
+    alias = (
+        task.__xpmtype__.name().split(".")[-1]
+        + f"_{tagspath(task)}_{task.jobpath.name}"
+    )
     alias = alias if len(alias) < 150 else alias[:150]
     return alias
 
@@ -106,12 +111,15 @@ def process_model(
     LearnerClass: Task,
     cfg: Configuration,
     runpath: Path,
+    tb_service: TensorboardService,
     learner_kwargs: dict = {},
 ) -> ProcessedModel:
     """Process a single model: train and evaluate it
     Returns a ProcessedModel dataclass containing the model and its tasks
     """
-    assert Path(cfg.data_folder).exists(), f"Data folder {cfg.data_folder} does not exist"
+    assert Path(
+        cfg.data_folder
+    ).exists(), f"Data folder {cfg.data_folder} does not exist"
 
     task = LearnerClass.C(
         # Model
@@ -157,17 +165,8 @@ def process_model(
         llm_evals=[],
     )
 
-    # Symlink so we can watch all this on tensorboard
-    run_dir = runpath / processed_model.id
-
-    if not run_dir.exists():
-        run_dir.unlink(missing_ok=True)
-        run_dir.symlink_to(
-            task.runpath,
-            target_is_directory=True,
-        )
-    else:
-        logging.warning(f"Run dir {run_dir} already exists, skipping symlink")
+    # Add to tensorboard service
+    tb_service.add(task, task.runpath)
 
     # Launch Flat benchmark evaluations
     for strat in cfg.flat_decoder_strategies:
@@ -218,7 +217,7 @@ def process_model(
 def process_results(helper: ExperimentHelper, processedModels: List[ProcessedModel]):
     """Process the results of the experiment: save models and evaluation results"""
 
-    import pandas as pd
+    from xpm_torch.huggingface import TorchHFHub
 
     # Create model directory
     model_dir = helper.xp.resultspath / "models"
@@ -226,7 +225,9 @@ def process_results(helper: ExperimentHelper, processedModels: List[ProcessedMod
 
     for processed_model in processedModels:
 
-        if not processed_model.learner.jobpath.exists() or (len(list(processed_model.learner.jobpath.glob("*.done"))) == 0):
+        if not processed_model.learner.jobpath.exists() or (
+            len(list(processed_model.learner.jobpath.glob("*.done"))) == 0
+        ):
             logging.warning(
                 f"Model {tagspath(processed_model.learner)} job path {processed_model.learner.jobpath} Not trained yet: skipping"
             )
@@ -234,21 +235,16 @@ def process_results(helper: ExperimentHelper, processedModels: List[ProcessedMod
 
         ## save model
         print(f"\n\n# Processing model {tagspath(processed_model.learner)}\n")
-        link_dir = model_dir / processed_model.id
-        # save model in its job path
-        save_dir = processed_model.learner.jobpath / "model"
+
+        save_dir = model_dir / processed_model.id
         if save_dir.exists():
+            logging.warning(
+                f"Save directory {save_dir} already exists for model {processed_model.id}, removing it"
+            )
             rmtree(save_dir)
-        save_dir.mkdir(exist_ok=True, parents=True)
 
-        if link_dir.is_symlink() or link_dir.is_file():
-            link_dir.unlink()
-        if not link_dir.exists():
-            link_dir.symlink_to(save_dir, target_is_directory=True)
-
-        serialize(
-            processed_model.ner_model, save_dir, init_tasks=[processed_model.loader]
-        )
+        # Save model in HF format (includes definition.json and model.safetensors)
+        TorchHFHub(processed_model.loader).save_pretrained(save_dir)
         print(f"Model saved to :\n{save_dir}")
 
         ## process Gold evaluation results
@@ -259,11 +255,14 @@ def process_results(helper: ExperimentHelper, processedModels: List[ProcessedMod
             eval_name = f"Eval_{i}_{eval.tags()['name']}_{eval.tags()['decoding_strategy']}(thr={eval.threshold})"
             eval_path = eval.jobpath / eval.result_path
             if not eval_path.exists():
-                logging.warning(f"skipping Eval path {eval_path} does not exist, for model {processed_model.id}")
+                logging.warning(
+                    f"skipping Eval path {eval_path} does not exist, for model {processed_model.id}"
+                )
                 continue
             results_df = process_eval(eval_path)
 
-            if len(processedModels) < 10: print(f"\n## Results for eval {eval_name}\n", results_df)
+            if len(processedModels) < 10:
+                print(f"\n## Results for eval {eval_name}\n", results_df)
 
             res_file = save_dir / f"{eval_name}.csv"
             with open(res_file, "w") as f:
@@ -276,7 +275,7 @@ def process_results(helper: ExperimentHelper, processedModels: List[ProcessedMod
                 processed_model.inferences.append(inf_path)
                 inf_save_path = save_dir / inf_path.name
                 if inf_save_path.exists():
-                    #remove the file or symlink
+                    # remove the file or symlink
                     inf_save_path.unlink()
                 # move the file
                 inf_save_path.hardlink_to(inf_path)
@@ -318,7 +317,9 @@ def run(helper: ExperimentHelper, cfg: Configuration):
     # get data folder from environment variable or config, with environment variable taking precedence
     data_folder = os.environ.get("NER_DATA", cfg.data_folder)
     if data_folder == "":
-        raise ValueError("Data folder not specified. Please set the NER_DATA environment variable or the data_folder field in the configuration.")
+        raise ValueError(
+            "Data folder not specified. Please set the NER_DATA environment variable or the data_folder field in the configuration."
+        )
     cfg.data_folder = data_folder
     # Build result directories
     llm_eval_folder = helper.xp.resultspath / "llm_annotations"
@@ -326,6 +327,9 @@ def run(helper: ExperimentHelper, cfg: Configuration):
 
     for folder in [llm_eval_folder, runpath]:
         folder.mkdir(exist_ok=True, parents=True)
+
+    # Tensorboard service
+    tb_service = helper.xp.add_service(TensorboardService(runpath))
 
     ###### LLM Annotation ######
     # Launch LLM annotation task for each annotator
@@ -370,7 +374,7 @@ def run(helper: ExperimentHelper, cfg: Configuration):
     if n_jobs > N_TASKS_LIMIT:
         logging.warning(f"Too many tasks would be launched: {n_jobs} > {N_TASKS_LIMIT}")
         logging.warning(
-            f"Please reduce the number of runs or the number of layers to avoid overloading the system"
+            "Please reduce the number of runs or the number of layers to avoid overloading the system"
         )
         return
     logging.info(f"Will launch {n_jobs} tasks")
@@ -404,9 +408,14 @@ def run(helper: ExperimentHelper, cfg: Configuration):
                         )
 
                         p_model = process_model(
-                            ner_model, LearnTokenMatching, cfg, runpath=runpath, learner_kwargs={
+                            ner_model,
+                            LearnTokenMatching,
+                            cfg,
+                            runpath=runpath,
+                            tb_service=tb_service,
+                            learner_kwargs={
                                 "dilate_entities": [],
-                            }
+                            },
                         )
 
                         # LLM Annotation evaluation
@@ -422,9 +431,7 @@ def run(helper: ExperimentHelper, cfg: Configuration):
                             )
 
                             llm_evaluation.submit(
-                                launcher=find_launcher(
-                                    cfg.launcher, tags=["slurm"]
-                                ),
+                                launcher=find_launcher(cfg.launcher, tags=["slurm"]),
                                 init_tasks=[p_model.loader],
                             )
                             p_model.llm_evals.append(llm_evaluation)
@@ -435,6 +442,7 @@ def run(helper: ExperimentHelper, cfg: Configuration):
     # Wait that everything finishes
     helper.xp.wait()
     import pandas as pd
+
     # Process results
     process_results(helper, processedModels)
 
@@ -453,7 +461,7 @@ def run(helper: ExperimentHelper, cfg: Configuration):
             )
     print(f"Found {len(inferences)} different inference files to compare")
 
-    #save the df of inferences, ensuring Paths are converted to strings
+    # save the df of inferences, ensuring Paths are converted to strings
     inf_df = pd.DataFrame.from_dict(inferences, orient="index")
     inf_df_file = helper.xp.resultspath / "inferences_summary.json"
     with open(inf_df_file, "w") as f:
@@ -469,14 +477,18 @@ def run(helper: ExperimentHelper, cfg: Configuration):
             print(f"Comparing {len(paths)} inferences for {inf_name}...")
 
             if len(paths) > 20:
-                print(f"Too many inferences to compare ({len(paths)}), only 20 allowed written df to filter and process in {inf_df_file}")
+                print(
+                    f"Too many inferences to compare ({len(paths)}), only 20 allowed written df to filter and process in {inf_df_file}"
+                )
                 continue
 
             comp = compare_inferences(
                 [InferredDataset.from_json(path) for path in paths]
             )
             comp["models"] = models
-            comp["layers"] = [m.ner_model.layer for m in processedModels if m.id in models]
+            comp["layers"] = [
+                m.ner_model.layer for m in processedModels if m.id in models
+            ]
             comp["paths"] = [str(p) for p in paths]
 
             comp_file = helper.xp.resultspath / f"Comparison_{inf_name}"

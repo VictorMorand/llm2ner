@@ -13,7 +13,7 @@ def sliding_window_causal_mask(sliding_window, mask_bos, b , h,  q_idx, kv_idx):
     )  # We dont need to check the right side of the sliding window since we are applying the causal mask
     if mask_bos:
         return (causal_mask & windowed_mask) & (kv_idx != 0)
-    else: 
+    else:
         return causal_mask & windowed_mask | (kv_idx == 0)
 
 def sliding_window_mask(sliding_window, mask_bos, b, h, q_idx, kv_idx):
@@ -107,16 +107,16 @@ def create_mask(
     h = torch.arange(0, H, device=device)
     m = torch.arange(0, Q_LEN, device=device)
     n = torch.arange(0, KV_LEN, device=device)
-    
+
     mask_mod = _vmap_for_bhqkv(mod_fn, prefix=())
     mask = mask_mod(b, h, m, n)
     return mask
-        
+
 
 #### Main Mask generator
 @lru_cache #use cache to store the mask, so that it is not recomputed for each batch with the same size
-def create_mask_cached(B, H, M, N, 
-        causal=True, 
+def create_mask_cached(B, H, M, N,
+        causal=True,
         sliding_window=0,
         mask_bos=False,
         device="cpu") -> Float[Tensor, "B H M N"]:
@@ -126,10 +126,10 @@ def create_mask_cached(B, H, M, N,
             score_mod = partial(sliding_window_causal_mask, sliding_window, mask_bos)
         else:
             score_mod = partial(sliding_window_mask, sliding_window, mask_bos)
-    else: 
+    else:
         if causal:
             score_mod = partial(causal_mask, mask_bos)
-        else: # no mask 
+        else: # no mask
             score_mod = lambda b, h, q_idx, kv_idx: torch.ones_like(q_idx, device=device, dtype=torch.bool)
 
     return create_mask(score_mod, B, H, M, N, device=device)
@@ -148,7 +148,7 @@ def get_dilation(dilation):
     """Get dilation function for NER tags that creates a mask for the tokens"""
     kernel = torch.ones(
         (1, 1, 2 * dilation + 1)
-    ).cuda()  # (out_channels, in_channels, kernel_size)
+    ).to(self.device)  # (out_channels, in_channels, kernel_size)
     dilation_fx = lambda tags: torch.where(
         F.conv1d(tags.unsqueeze(1), kernel, padding=dilation).squeeze(1) != 0,
         True,
@@ -173,7 +173,7 @@ def get_2d_dilation(dilation:Tuple):
 
     kernel = torch.zeros((1, 1, k_size, k_size))
     kernel[:, :, a : -a if a else k_size, b : -b if b else k_size] = 1
-    kernel = kernel.cuda()  # (out_channels, in_channels, kernel_size, kernel_size)
+    kernel = kernel.to(self.device)  # (out_channels, in_channels, kernel_size, kernel_size)
     # pattern input shape (batch, seq, seq)
     dilation_fx = lambda pattern: torch.where(
         F.conv2d(pattern.unsqueeze(1), kernel, padding="same", stride=1).squeeze(1)
@@ -182,4 +182,3 @@ def get_2d_dilation(dilation:Tuple):
         torch.tensor(False, device="cuda"),
     )
     return dilation_fx
-

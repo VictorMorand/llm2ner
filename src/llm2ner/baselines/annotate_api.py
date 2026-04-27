@@ -1,11 +1,17 @@
-import os, re, requests, subprocess, time, socket, json
+import os
+import re
+import requests
+import subprocess
+import time
+import socket
+import json
 from pathlib import Path
 import logging
 from tqdm import tqdm
 from llm2ner.data import load_dataset_splits
 from llm2ner.utils import PathOutput
 from transformers import AutoTokenizer
-from experimaestro import Task, Param, Meta, Constant, field, PathGenerator
+from experimaestro import Task, Param, Meta, Constant, field
 
 # this is needed to avoid proxy issues when lauching ollama locally
 os.environ["NO_PROXY"] = "localhost,127.0.0.1"
@@ -85,7 +91,7 @@ def openai_infer(prompt, model, client):
         # prompt = prompt.split("Passage:")
         # system = prompt[0]
         # message = ''.join(prompt[1:]).strip()
-    
+
         response = client.chat.completions.create(
             model=model,
             messages=[
@@ -253,7 +259,7 @@ class LLMannotation(Task):
                 json.dump(annotated_data, f, indent=2)
             print(f"Wrote {len(annotated_data)} annotated samples to {result_file}")
             # write last prompt to file for debugging
-            debug_file = result_folder / f"last_prompt.txt"
+            debug_file = result_folder / "last_prompt.txt"
             with open(debug_file, "w") as f:
                 f.write(prompt)
 

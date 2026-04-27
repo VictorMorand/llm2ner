@@ -18,8 +18,8 @@
 [![arXiv](https://img.shields.io/badge/arXiv-2408.08656-b31b1b.svg)](https://arxiv.org/abs/2510.19410)
 [![Repository version](https://img.shields.io/badge/📄-BlogPost-blue)](https://victormorand.github.io/publications/2025-ToMMeR/)
 [![Try in Colab !](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/VictorMorand/llm2ner/blob/main/Notebooks/ToMMeR_Demo.ipynb)
+[![All Models](https://img.shields.io/badge/🤗%20Hugging%20Face%20Models-blue)](https://huggingface.co/llm2ner)
 [![Repository version](https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2FVictorMorand%2Fllm2ner%2Fmain%2Fpyproject.toml&query=project.version&label=version&color=blue)](https://github.com/VictorMorand/llm2ner)
-
 <img src="Assets/AbstractFig.png" alt="ToMMeR Architecture" width="600"/>
 </div>
 
@@ -118,9 +118,29 @@ outputs = plotting.demo_inference( text, tommer, llm,
 [Experimaestro](https://github.com/experimaestro/experimaestro-python) is used to launch and monitor experiments.
 You can run an experiment training a ToMMeR Model on the specified Dataset with the following command:
 
+### Data
+
+We first need to process PileNer data, we provide a script to process it.
+
 ```bash
-uv run experimaestro run-experiment experiments/trainTokenMatching
+uv run data/process_pilener.py
 ```
+
+Then make sure to set your env `NER_DATA` so that the experiments can find it.
+
+### Launching Training
+First look at what will be done with
+
+```bash
+uv run experimaestro run-experiment experiments/trainTokenMatching --run-mode DRY_RUN
+```
+
+Then to execute all tasks:
+```bash
+uv run experimaestro run-experiment experiments/trainTokenMatching --run-mode DRY_RUN
+```
+(we also provide a debug version)
+
 
 ## Acknowledgements
 

@@ -18,7 +18,7 @@ import torch.nn.functional as F
 
 # HF and Tlens
 from transformer_lens import HookedTransformer
-from transformers import PreTrainedTokenizerBase
+from transformers import PreTrainedTokenizerBase, PreTrainedModel
 
 # xpm and misc
 from experimaestro import (
@@ -30,7 +30,12 @@ from experimaestro import (
 from llm2ner import masks, heuristics
 import llm2ner.data as data
 from llm2ner.losses import balanced_BCE
-from llm2ner.models.model import *
+from llm2ner.models.model import (
+    MAX_ENT_LENGTH,
+    FILL_NEG_LOGITS,
+    NERmodel,
+    train_lightning,
+)
 from llm2ner.models.TokenMatching import (
     ReprClassifier,
     shift_up,
@@ -78,21 +83,47 @@ class ToMMeR(NERmodel):
     normalize_scores: Param[str] = field(default="", ignore_default=True)
     """Normalization method for attn scores, default none, can be 'cosine', or 'log_sigmoid' """
 
+    mask_bos: Param[Optional[bool]] = field(
+        default=None, ignore_default=True, overrides=True
+    )
+    """Whether to mask the BOS token (index 0). If None, auto-detected from the LLM tokenizer config."""
+
     def __initialize__(self):
-        assert self.llm_name is not None, (
-            "llm_name should be set to the name of the model used to extract the representations"
-        )
+        assert (
+            self.llm_name is not None
+        ), "llm_name should be set to the name of the model used to extract the representations"
         assert self.rank > 0, f"rank should be > 0, got {self.rank}"
-        assert self.sliding_window >= 0, (
-            f"sliding_window should be >= 0, got {self.sliding_window}"
-        )
-        assert self.layer is not None, (
-            "layer should be set to the layers of the model used to extract the representations"
-        )
+        assert (
+            self.sliding_window >= 0
+        ), f"sliding_window should be >= 0, got {self.sliding_window}"
+        assert (
+            self.layer is not None
+        ), "layer should be set to the layers of the model used to extract the representations"
 
         super().__initialize__()
 
-        self.mask_bos = True
+        # Auto-detect mask_bos if not specified
+        if self.mask_bos is None:
+            try:
+                from transformers import AutoTokenizer
+                from llm2ner.utils import get_official_model_name
+
+                model_id = get_official_model_name(self.llm_name)
+                # Load only the tokenizer config to check for BOS token presence
+                tokenizer = AutoTokenizer.from_pretrained(
+                    model_id, local_files_only=True
+                )
+                self.mask_bos = tokenizer.bos_token_id is not None
+                logging.info(
+                    f"Auto-detected mask_bos={self.mask_bos} for model {model_id}"
+                )
+            except Exception as e:
+                # Fallback to True (conservative) if detection fails
+                self.mask_bos = True
+                logging.warning(
+                    f"Could not auto-detect BOS for {self.llm_name}: {e}. Defaulting to mask_bos=True"
+                )
+
         self.model_dim = self.dim
         # two sub modules
 
@@ -306,7 +337,7 @@ class ToMMeR(NERmodel):
         self,
         batch: dict,
         tokens: Float[torch.Tensor, "batch seq"],
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
         scores: Float[torch.Tensor, "batch seq seq"],
         end_ent_scores: Float[torch.Tensor, "batch seq"],
         mask: Bool[torch.Tensor, "batch seq seq"],
@@ -331,10 +362,7 @@ class ToMMeR(NERmodel):
         attn_patterns = batch["pattern"].to(
             self.device
         )  # tensor shape (batch, seq, seq)
-        end_ent = batch["end_ent"].to(self.device)
         tokenizer: PreTrainedTokenizerBase = model.tokenizer  # type: ignore
-        b_size = attn_patterns.size(0)
-        # type:ignore shape (batch, seq)
         padded: torch.Tensor = tokens == tokenizer.pad_token_id
 
         # transform to padded mask to 2D mask
@@ -343,7 +371,6 @@ class ToMMeR(NERmodel):
         #### mask computation for loss
         if dilate_entities is None:
             # compute loss on everything, take orginal mask
-            end_ent_mask_1D = torch.ones_like(end_ent, dtype=torch.bool)
             dilated_mask = torch.ones_like(attn_patterns, dtype=torch.bool)
         else:  # dilate entities -> can be 2D or 1D
             if (
@@ -373,7 +400,6 @@ class ToMMeR(NERmodel):
                 )
 
         batch_mask = dilated_mask & mask & ~padded_mask
-        batch_mask_1D = batch_mask.diagonal(0, 1, 2)  # shape (batch, seq)
         span_scores = self.combine_scores(
             scores, end_ent_scores, batch_mask
         )  # shape (batch, seq, seq)
@@ -385,7 +411,7 @@ class ToMMeR(NERmodel):
             thr_mask = span_scores > PL_threshold
             span_labels[thr_mask] = F.sigmoid(span_scores[thr_mask])
 
-        if self.pos_weight is None or self.pos_weight == 0:
+        if pos_weight is None or pos_weight == 0:
             # balanced BCE loss
             span_loss = balanced_BCE(
                 span_scores,
@@ -393,7 +419,7 @@ class ToMMeR(NERmodel):
             )
         else:
             pos_weigths = torch.ones_like(span_scores)
-            pos_weigths[span_labels == 1] = self.pos_weight
+            pos_weigths[span_labels == 1] = pos_weight
 
             span_loss = F.binary_cross_entropy_with_logits(
                 span_scores,
@@ -407,7 +433,7 @@ class ToMMeR(NERmodel):
     def forward(
         self,
         tokens: Float[torch.Tensor, "batch seq"],
-        model: HookedTransformer,
+        model: HookedTransformer | PreTrainedModel,
         attn_mask: Optional[Float[torch.Tensor, "batch seq seq"]] = None,
         return_logits: bool = False,
         return_mask: bool = False,
@@ -452,7 +478,9 @@ class ToMMeR(NERmodel):
         else:
             return span_logits
 
-    def training_step(self, batch: dict, model: HookedTransformer) -> torch.Tensor:
+    def training_step(
+        self, batch: dict, model: HookedTransformer | PreTrainedModel, **kwargs
+    ) -> torch.Tensor:
         """Compute loss for a batch of data
         Args:
             batch: dict of data
@@ -470,9 +498,11 @@ class ToMMeR(NERmodel):
         tokens = inputs["input_ids"].to(self.device)
         attn_mask = inputs["attention_mask"].to(self.device)
 
-        dilate_entities = (
-            self.dilate_entities if hasattr(self, "dilate_entities") else None
+        dilate_entities = kwargs.get(
+            "dilate_entities",
+            self.dilate_entities if hasattr(self, "dilate_entities") else None,
         )
+        pos_weight = kwargs.get("pos_weight", getattr(self, "pos_weight", 1.0))
 
         # get the query and key scores from the model with shape (len(layers), batch, seq, n_heads, dim_head)
         Q, K, reps = self.get_QK_reps(
@@ -492,13 +522,13 @@ class ToMMeR(NERmodel):
             scores=scores,
             end_ent_scores=end_ent_scores,
             mask=mask,
-            pos_weight=self.pos_weight,
+            pos_weight=pos_weight,
             dilate_entities=dilate_entities,
         )
 
         return loss
 
-    def train(
+    def manual_train(
         self,
         train_loader,
         val_loader,
@@ -549,9 +579,9 @@ class ToMMeR(NERmodel):
 
         ## Setup masking and loss
         if dilate_entities is not None:
-            assert type(dilate_entities) == list, (
-                f"dilate_entities should be a list of ints, got {type(dilate_entities)}"
-            )
+            assert (
+                isinstance(dilate_entities, list)
+            ), f"dilate_entities should be a list of ints, got {type(dilate_entities)}"
             if dilate_entities == []:
                 dilate_entities = None
 
@@ -559,9 +589,9 @@ class ToMMeR(NERmodel):
         self.pos_weight = pos_weight
 
         if PL_threshold != 1:
-            assert PL_threshold > 0 and PL_threshold < 1, (
-                f"Pseudo-label threshold should be a probability in [0, 1], got {PL_threshold}"
-            )
+            assert (
+                PL_threshold > 0 and PL_threshold < 1
+            ), f"Pseudo-label threshold should be a probability in [0, 1], got {PL_threshold}"
             self.PL_threshold = torch.tensor(PL_threshold).logit()
         else:
             self.PL_threshold = None
@@ -580,7 +610,7 @@ class ToMMeR(NERmodel):
         gc.collect()
         torch.cuda.empty_cache()
 
-        hist = train(
+        hist = train_lightning(
             self,
             train_loader=train_loader,
             val_loader=val_loader,

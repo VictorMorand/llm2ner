@@ -1,23 +1,29 @@
-import os, gc, re, torch, logging
+import gc
+import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, Dataset
 import torch.nn.init as init
-from tqdm import tqdm
 from typing import Optional, Union, List
 from jaxtyping import Float
+from pathlib import Path
+
 from huggingface_hub import hf_hub_download, snapshot_download
 from huggingface_hub.utils import EntryNotFoundError
-from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, AutoConfig
+from transformers import AutoModel, AutoModelForCausalLM, AutoTokenizer, AutoConfig, PreTrainedModel
+
 from transformer_lens import HookedTransformer
 import transformer_lens as tl
-
 from transformer_lens.loading_from_pretrained import (
     convert_hf_model_config,
     get_official_model_name,
 )
+from experimaestro import Config, Param
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 CLASS_TO_BLOCK_NAME = {
+    "Qwen3Model": "layers",
     "LlamaModel": "layers",
     "GPTNeoXModel": "layers",
     "MistralModel": "layers",
@@ -60,8 +66,6 @@ def getattr_nest(obj, attr_path: str, default=None):
 
 ########################################################################
 ############################## XPM utils  ##############################
-from experimaestro import Config, Param, Meta
-from pathlib import Path
 
 
 class PathOutput(Config):
@@ -111,7 +115,6 @@ def check_hf_cache(model_id):
 def check_internet():
     try:
         import socket
-
         socket.create_connection(("www.google.com", 80))
         return True
     except OSError:
@@ -145,7 +148,7 @@ def load_llm(
     try:
         model_id = get_official_model_name(model_name)
         config = convert_hf_model_config(model_id)
-    except Exception as e:
+    except Exception:
         logging.warning(
             f"Model alias {model_name} not found, assuming its a valid HuggingFace model name"
         )
@@ -154,12 +157,12 @@ def load_llm(
     # check if the model is already downloaded
     if check_hf_cache(model_id) or force_download:
         # hugginface in offline mode by default
-        logging.info(f"Model {model_name} is in cache")
+        logger.info(f"Model {model_name} is in cache")
         # get config directly from HF
         config = AutoConfig.from_pretrained(model_id)  # check if model exists
 
     else:
-        logging.info(
+        logger.info(
             f"Trying to download {model_name}... (will need internet) \n you can also try to download it manually with `python scripts/download_llm.py {model_id}`"
         )
         # pass hugginface in online mode
@@ -178,7 +181,7 @@ def load_llm(
             raise EnvironmentError(
                 "No internet connection available, cannot download the model"
             )
-        print("HF_HUB_OFFLINE:", os.environ.get("HF_HUB_OFFLINE"))
+        logger.info(f"HF_HUB_OFFLINE: {os.environ.get('HF_HUB_OFFLINE')}")
         config = AutoConfig.from_pretrained(
             model_id, local_files_only=False
         )  # check if model exists
@@ -210,8 +213,16 @@ def load_llm(
             trust_remote_code=True,
             low_cpu_mem_usage=True,
             device_map="auto",
+            add_bos_token=True,
             # dtype=dtype,
             **kwargs,
+        )
+
+    # Check if a BOS token is available
+    if not hasattr(model.tokenizer, "bos_token") or model.tokenizer.bos_token is None:
+        logging.warning(
+            f"Model tokenizer {model.tokenizer.__class__.__name__} has no BOS token. "
+            "Sentences will start without one, which might affect first-token attention."
         )
 
     # check if model has pad_token, if not add it
@@ -236,7 +247,7 @@ def load_llm(
                 model.tokenizer.pad_token is not None
             ), "pad_token should be defined now"
 
-    logging.info(
+    logger.info(
         f"{model_id} loaded as {model.__class__.__name__} \n \
           with {count_parameters(model)/1e9:.3f} B parameters \n \
           GPU allocated memory : {torch.cuda.memory_allocated()/1024**3:.3f} GB"
@@ -253,7 +264,7 @@ def load_llm(
     return model
 
 
-def cut_llm(model: HookedTransformer, layer: int) -> HookedTransformer:
+def cut_llm(model: HookedTransformer | PreTrainedModel, layer: int) -> HookedTransformer:
     """Cut a HookedTransformer model at a given layer
     Args:
         model: the HookedTransformer model to cut
@@ -261,7 +272,7 @@ def cut_llm(model: HookedTransformer, layer: int) -> HookedTransformer:
     Returns:
         cut_model: the cut HookedTransformer model
     """
-    logging.info(f"Trying to cut model after layer {layer}..")
+    logger.info(f"Trying to cut model after layer {layer}..")
     if isinstance(model, HookedTransformer):
         n_layers = model.cfg.n_layers
         assert (
@@ -276,15 +287,21 @@ def cut_llm(model: HookedTransformer, layer: int) -> HookedTransformer:
             del model.unembed  # delete unembed layer
 
         model.cfg.n_layers = layer + 1
-        logging.info(f"Cut HookedTransformer with {n_layers} layers to {len(model.blocks)} layers")
+        logger.info(f"Cut HookedTransformer with {n_layers} layers to {len(model.blocks)} layers")
     else:
         className = model.__class__.__name__
         blocks_attr = CLASS_TO_BLOCK_NAME.get(className, None)
         if blocks_attr is None:
-            logging.warning(
-                f"Model class {className} not supported for cutting yet"
-            )
-            return model
+            if hasattr(model, "layers"):
+                blocks_attr = "layers"
+                logging.warning(
+                    f"Model class {className} unknown, but has 'layers' attribute, using it for cutting"
+                )
+            else:
+                logging.warning(
+                    f"Model class {className} not supported for cutting yet"
+                )
+                return model
 
         blocks = getattr_nest(model, blocks_attr, None)
         assert isinstance(
@@ -300,9 +317,9 @@ def cut_llm(model: HookedTransformer, layer: int) -> HookedTransformer:
         # clear the cache if any
         gc.collect()
         torch.cuda.empty_cache()
-        logging.info(f"Cut {className} with {n_layers} layers to {len(getattr_nest(model, blocks_attr, []))} layers")
+        logger.info(f"Cut {className} with {n_layers} layers to {len(getattr_nest(model, blocks_attr, []))} layers")
 
-    return model
+        return model
 
 
 def get_model_max_length(model_name: str) -> int:
@@ -315,7 +332,7 @@ def get_model_max_length(model_name: str) -> int:
         llm_config = convert_hf_model_config(get_official_model_name(model_name))
         max_length = llm_config["n_ctx"]
 
-    except Exception as e:
+    except Exception:
         logging.warning(
             f"Could not get max length from transformer_lens config for model {model_name}, trying from AutoModel config"
         )
@@ -323,7 +340,7 @@ def get_model_max_length(model_name: str) -> int:
         for attr in possible_attr:
             if hasattr(llm_config, attr):
                 max_length = getattr(llm_config, attr)
-                logging.info(
+                logger.info(
                     f"Found max length attribute {attr} with value {max_length}"
                 )
                 break
@@ -345,14 +362,14 @@ def get_model_dim(model_name: str):
         llm_config = convert_hf_model_config(get_official_model_name(model_name))
         dim = llm_config["d_model"]
 
-    except Exception as e_tlens:
+    except Exception:
         hf_config = AutoConfig.from_pretrained(model_name)
         dim = hf_config.hidden_size
 
         for attr in possible_attr:
             if hasattr(hf_config, attr):
                 dim = getattr(hf_config, attr)
-                logging.info(f"Found model dimension attribute {attr} with value {dim}")
+                logger.info(f"Found model dimension attribute {attr} with value {dim}")
                 break
         if dim is None:
             raise ValueError(
@@ -417,7 +434,7 @@ def print_all_submodules(model: torch.nn.Module, max_depth: int = float("inf")):
     for name, module in model.named_modules():
         depth = name.count(".")
         if depth <= max_depth:
-            logging.info(f"{'  ' * depth}├── {name}: {module.__class__.__name__}")
+            logger.info(f"{'  ' * depth}├── {name}: {module.__class__.__name__}")
 
 
 def get_residual_rep_hook_name(layer: int):
@@ -489,7 +506,7 @@ def compute_to_layer_HF(
                 f"Unexpected output shape from {hook_name}: {output.shape}, expected {(b_size, seq, dim)}"
             )
         if verbose:
-            logging.info(
+            logger.info(
                 f"Saving activations from {hook_name} with shape {output.shape}"
             )
         buffer.copy_(output.detach())
@@ -513,7 +530,7 @@ def compute_to_layer_HF(
             _ = model(tokens, attention_mask=attn_mask)
     except StopForwardException:
         if verbose:
-            logging.info(f"Stopped forward after {hook_name}")
+            logger.info(f"Stopped forward after {hook_name}")
     finally:
         handle.remove()  # clean up hook
 
@@ -578,7 +595,7 @@ def compute_to_layer(
 
     hook_name = get_residual_rep_hook_name(layer)  # get hook name for the layer output
     if verbose:
-        logging.info(f"compute hidden states at hook {hook_name}")
+        logger.info(f"compute hidden states at hook {hook_name}")
 
     def save_activation(tensor, buffer):
         """Save wanted activation in buffer
@@ -603,13 +620,13 @@ def compute_to_layer(
         )
     except ValueError as e:
         if verbose:
-            logging.info(f"Caught exception {e}")
+            logger.info(f"Caught exception {e}")
 
     return buffer.to(dtype)
 
 
 def get_QK_from_layers(
-    model: HookedTransformer,
+    model: HookedTransformer | PreTrainedModel,
     tokens: torch.Tensor,
     layers: list,
     attn_mask: Optional[torch.Tensor] = None,
@@ -643,7 +660,7 @@ def get_QK_from_layers(
 
     b_size, seq = tokens.shape
     model_dtype = next(model.parameters()).dtype
-    
+
     layers = sorted(layers)  # sort the layers to get the right hook names
     use_rotary = True if model.cfg.positional_embedding_type == "rotary" else False
 
@@ -671,12 +688,12 @@ def get_QK_from_layers(
     reps = torch.zeros(b_size, seq, model.cfg.d_model, dtype=model_dtype)
 
     if verbose:
-        logging.info(
+        logger.info(
             f"Compute query and keys for {model.cfg.model_name} at layers {layers}, hooks are:"
         )
-        logging.info(hooks_q_name)
-        logging.info(hooks_k_name)
-        logging.info(f"Buffer shape: {queries.shape} {keys.shape}")
+        logger.info(hooks_q_name)
+        logger.info(hooks_k_name)
+        logger.info(f"Buffer shape: {queries.shape} {keys.shape}")
 
     # hook functions to save the activations
 
@@ -723,7 +740,7 @@ def get_QK_from_layers(
             )
         except ValueError as e:
             if verbose:
-                logging.info(f"Caught exception {e}")
+                logger.info(f"Caught exception {e}")
 
     if move_to_device:
         device = next(model.parameters()).device
@@ -736,7 +753,7 @@ def get_QK_from_layers(
 
 def get_attnScores_from_layers(
     layers: list,
-    model: HookedTransformer,
+    model: HookedTransformer | PreTrainedModel,
     tokens: torch.Tensor,
     attn_mask: Optional[torch.Tensor] = None,
     before_softmax: bool = True,
@@ -761,9 +778,8 @@ def get_attnScores_from_layers(
         reps: tensor of shape (batch, seq, dim) with the residual representations at last given layer
     """
     # process model configuration to get right hooks
-    head_dim = model.cfg.d_head
     n_heads = model.cfg.n_heads
-    
+
     b_size, seq = tokens.shape
     model_dtype = next(model.parameters()).dtype
     layers = sorted(layers)  # sort the layers to get the right hook names
@@ -771,11 +787,11 @@ def get_attnScores_from_layers(
     # get the hook names for the attn scores
     attn_hook_names = [
         tl.utils.get_act_name(
-            "attn_scores" if before_softmax else "pattern", 
+            "attn_scores" if before_softmax else "pattern",
             layer=layer) for layer in layers
     ]
     # get hook name for the layer output
-    hook_rep_name = tl.utils.get_act_name("resid_post", layer=layers[-1])  
+    hook_rep_name = tl.utils.get_act_name("resid_post", layer=layers[-1])
 
     # create buffer where to store representations with the right configuration
     attn_buffer = torch.zeros(
@@ -785,11 +801,11 @@ def get_attnScores_from_layers(
     reps = torch.zeros(b_size, seq, model.cfg.d_model, dtype=model_dtype)
 
     if verbose:
-        logging.info(
+        logger.info(
             f"Compute query and keys for {model.cfg.model_name} at layers {layers}, hooks are:"
         )
-        logging.info(f" - attn hooks: {attn_hook_names}")
-        logging.info(f"Buffer shape: {attn_buffer.shape} {reps.shape}")
+        logger.info(f" - attn hooks: {attn_hook_names}")
+        logger.info(f"Buffer shape: {attn_buffer.shape} {reps.shape}")
 
     # hook functions to save the activations
 
@@ -814,7 +830,7 @@ def get_attnScores_from_layers(
         )
         for hook_name, layer in zip(attn_hook_names, layers)
     ]
-    
+
     # run the model with the hook
     with torch.no_grad():
         try:
@@ -826,7 +842,7 @@ def get_attnScores_from_layers(
             )
         except ValueError as e:
             if verbose:
-                logging.info(f"Caught exception {e}")
+                logger.info(f"Caught exception {e}")
 
     if move_to_device:
         device = next(model.parameters()).device
@@ -861,7 +877,7 @@ def get_replace_with_rep_hook(reps, inds):
 
 
 def get_representation(
-    model: HookedTransformer,
+    model: HookedTransformer | PreTrainedModel,
     tokens,
     token_inds,
     layer: int,
@@ -894,7 +910,7 @@ def get_representation(
         )  # get hook name for the layer output
 
     if verbose:
-        logging.info(
+        logger.info(
             f"extract representation of tokens {token_inds} at hook {hook_name}"
         )
 
@@ -925,7 +941,7 @@ def get_representation(
 
 
 def get_avg_representation(
-    model: HookedTransformer, prompts, entities, layer: int, verbose: bool = False
+    model: HookedTransformer | PreTrainedModel, prompts, entities, layer: int, verbose: bool = False
 ):
     """extract average model representation of entities at given layer
     representations will be extracted at entity tokens after reading f"{prompt}{entity}"
@@ -950,7 +966,7 @@ def get_avg_representation(
         )  # get hook name for the layer output
 
     if verbose:
-        logging.info(
+        logger.info(
             f"extract average representation of {entities} at hook {hook_name}"
         )
 
@@ -958,8 +974,7 @@ def get_avg_representation(
     prompts_inputs = model.tokenizer(
         prompts, padding=True, padding_side="left", return_tensors="pt"
     )
-    prompt_tokens = prompts_inputs["input_ids"].cuda()
-    prompt_mask = prompts_inputs["attention_mask"].cuda()
+    prompt_tokens = prompts_inputs["input_ids"].to(model.device)
 
     entity_inputs = model.tokenizer(
         entities,
@@ -968,16 +983,14 @@ def get_avg_representation(
         return_tensors="pt",
         add_special_tokens=False,
     )
-    entity_tokens = entity_inputs["input_ids"].cuda()
-    entity_mask = entity_inputs["attention_mask"].cuda()
+    entity_tokens = entity_inputs["input_ids"].to(model.device)
 
     # concatenate prompts and entities
     tokens = torch.hstack([prompt_tokens, entity_tokens])
-    attn_mask = torch.hstack([prompt_mask, entity_mask])
     # TODO may need to adjust attention mask for left padding -> TBD
 
     # check that decoder string is correct
-    # logging.info(model.tokenizer.decode(tokens.view(-1).cpu().numpy())) # OK !
+    # logger.info(model.tokenizer.decode(tokens.view(-1).cpu().numpy())) # OK !
 
     ind_min = prompt_tokens.shape[-1]
     ind_max = prompt_tokens.shape[-1] + entity_tokens.shape[-1] - 1
@@ -990,7 +1003,7 @@ def get_avg_representation(
         b_size, entity_tokens.shape[-1], dim, dtype=dtype
     )  # create buffer where to store representations
     buffer.requires_grad = False
-    buffer = buffer.cuda()
+    buffer = buffer.to(model.device)
 
     def save_activations(tensor, buffer, min_ind, max_ind):
         """Save wanted activations in buffer
@@ -1032,7 +1045,7 @@ def project_on_vocab(model, rep, k=10):
         rep: the representation to project
         k: number of top tokens to return
     """
-    logits = torch.tensor(rep).float().cuda() @ model.W_U
+    logits = torch.tensor(rep).float().to(model.device) @ model.W_U
     topk_inds = torch.topk(logits, k).indices
     topk_tokens = model.tokenizer.convert_ids_to_tokens(topk_inds.cpu().numpy())
     return topk_tokens
