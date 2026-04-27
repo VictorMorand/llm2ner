@@ -277,7 +277,7 @@ def manual_train(
     # move model to device if available
     if torch.cuda.is_available():
         use_cuda = True
-        module.to(self.device)
+        module.cuda()
     else:
         use_cuda = False
         module.cpu()

@@ -31,7 +31,7 @@
 
 **TL-DR** - ToMMeR is a lightweight (computaionally ) probing model extracting emergent mention detection capabilities from early layers representations of *any* LLM backbone you plug it into. It achieves high Zero Shot recall across a wide set of NER benchmarks with controlled precision over 90%( human calibrated LLM-judge)
 
-- We release some Trained models are available on HugginFace: 🤗 https://huggingface.co/llm2ner/models
+- We release some Trained models on HugginFace: 🤗 https://huggingface.co/llm2ner/models
     - You can train your own model on any backbone using this repository.
 - See the demo notebook [`ToMMeR_Demo.ipynb`](./Notebooks/ToMMeR_Demo.ipynb)
 [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/VictorMorand/llm2ner/blob/main/Notebooks/ToMMeR_Demo.ipynb)
