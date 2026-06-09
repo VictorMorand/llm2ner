@@ -28,7 +28,7 @@ dependencies = [
     "spacy",
     "tensorboard>=2.20.0",
     "transformer-lens>=2.15.0",
-    "xpm-torch",
+    "xpm-torch>=0.2.0",
     "lightning>=2.6.1",
 ]
 
@@ -41,7 +41,6 @@ package = true
 
 [tool.uv.sources]
 llm2ner = { workspace = true }
-xpm-torch = { git = "https://github.com/experimaestro/xpm-torch.git" }
 
 [tool.setuptools]
 # ...
